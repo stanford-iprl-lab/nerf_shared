@@ -7,3 +7,5 @@ configargparse
 tensorboard>=2.0
 tqdm
 opencv-python
+torchtyping
+typeguard
