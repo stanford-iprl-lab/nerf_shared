@@ -26,17 +26,14 @@ def main():
         #    - use next pose and add randomness to that
         #    - use action, add randomnes and integrate forward
         guess_pose = traj.next_non_start_param()
-        real_pose = guess_pose + 0.1*torch.random(2,3) # terrible way to add randomness
+        real_pose = guess_pose + 0.1*torch.random(2,3) # terrible way to add randomness, more for ilustration
 
         # relocalize TODO
         corrected_pose = relocalize(nerf, guess_pose, real_pose)
 
         # replan
-        new_trajectory = traj.update_trajectory(nerf,corrected_pose)
-
-        # log new path
-        new_trajectory.log_to_file("log.txt")
-        traj = new_trajectory
+        traj.update_trajectory(nerf,corrected_pose)
+        traj.log_to_file("log.txt") # will be used to generate visuals for paper
 
 def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":..., 1]:
     pass
@@ -75,14 +72,25 @@ class Trajectory:
         return self.params[0,:,:]
 
     def update_trajectory(self, nerf, real_param):
-        pass
+        self.start_pose = self.path_from_parameters(real_param)
+        self.params = self.params[1:, ...]
+        self.optimize_path(nerf)
 
     def log_to_file(self, file_name):
         pass
 
+    def optimize_path(self, nerf):
+        opt = torch.optim.Adam(self.params, lr=0.0001)
+        for _ in range(100):
+            opt.zero_grad()
+            cost = path_cost(nerf, self.get_homogenious_mats())
+            cost.backward()
+            opt.step()
+
     @staticmethod
     def initial_path_parameters(nerf, start_pose, end_pose, steps) -> TensorType["path_length":..., 2,3]:
         pass
+        # run A* (or initialize as stright line path?)
 
     @staticmethod
     @typechecked
