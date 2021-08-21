@@ -12,31 +12,36 @@ from typeguard import typechecked
 patch_typeguard()
 
 def main():
-    start_state = torch.tensor([0,0, 1.0, 0,10,0,  -0.5,0,0,   0.1,0.1,0])
-    end_state   = torch.tensor([10,0,1.0, 0,-10,0,  0.5,0.5,0, 0.5,0,0])
+    start_state = torch.tensor([0,0, 1.0,  0, 0,0,   0  ,0  ,0, 0.0,0.0,0])
+    end_state   = torch.tensor([5,0,1.0,  0,-0,0,  0  ,0  ,0, 0.0,0.0,0])
 
-    steps = 10
+    steps = 20
 
     traj = Trajectory(start_state, end_state, steps)
 
     opt = torch.optim.Adam(traj.params(), lr=0.1)
+    # scheduler = torch.optim.lr_scheduler.ExponentialLR(opt, gamma=0.99)
+    # opt = torch.optim.Adam([traj.states], lr=0.1)
     # opt = torch.optim.Adam([traj.actions], lr=0.1)
 
-    # act = torch.tensor([ 10.0, 0,0,0.0])
+    # act = torch.tensor([ 20.0, -5.0,0,1])
     # state = start_state.clone()
+    # states = traj.states.clone().detach()
     # for i in range(steps - 2):
     #     state = next_state(state, act)
-    #     traj.states[i] = state.clone()
+    #     states[i] = state.clone()
+    # traj.states = states
 
 
-    for it in range(200):
+    for it in range(500):
         opt.zero_grad()
         loss = traj.total_cost()
         print(it, loss)
         loss.backward()
-        print(traj.actions.grad)
+        # print(traj.actions.grad)
 
         opt.step()
+        # scheduler.step()
 
     fig = plt.figure(figsize=plt.figaspect(2.))
     ax3d = fig.add_subplot(2, 1, 1, projection='3d')
@@ -55,9 +60,10 @@ class Trajectory:
 
         states = (1-slider) * start_state + slider * end_state
         # self.states = torch.tensor(states, requires_grad=True)
-        self.states = torch.tensor(states)
+        self.states = states.clone().detach().requires_grad_(True)
 
         self.actions = torch.zeros(steps-1, 4, requires_grad=True)
+        # self.actions = torch.randn(steps-1, 4, requires_grad=True)
 
     def plot_action(self, ax):
         actions = self.actions.detach().numpy() 
@@ -65,6 +71,11 @@ class Trajectory:
         ax.plot(actions[...,1], label="tx")
         ax.plot(actions[...,2], label="ty")
         ax.plot(actions[...,3], label="tz")
+
+        states = self.states.detach().numpy()
+        ax.plot(states[...,0], label="px")
+        ax.plot(states[...,4], label="vx")
+        ax.plot(states[...,7], label="ey")
 
 
         cost = []
@@ -121,9 +132,28 @@ class Trajectory:
     def dynamics_cost(self):
         cost = 0
         states = self.all_states()
-        for action, state, n_state in zip(self.actions, states[:-1], states[1:]):
-            pred_state = next_state(state,action)
-            cost += torch.sum( torch.abs( pred_state - n_state) )
+        steps = states.shape[0]
+        # for action, state, n_state in zip(self.actions, states[:-1], states[1:]):
+        #     pred_state = next_state(state,action)
+        #     cost += torch.sum( torch.abs( pred_state - n_state) )
+
+        # for a1,a2,a3, state, n_state in zip(self.actions[:-2],self.actions[1:-1],self.actions[2:], states[:-3], states[3:]):
+        #     pred_state = next_state(next_state(next_state(state,a1),a2),a3)
+        #     cost += torch.sum( torch.abs( pred_state - n_state) )
+
+        # parabola = (states[...,0] - 5)**2  - states[...,2] - 3
+        # cost += torch.sum(F.relu(parabola))
+
+        depth = 2
+        for i in range(steps-depth):
+            actions = self.actions[i:i+depth]
+            local_states = states[i:i+depth+1]
+            state = local_states[0]
+            future_states = local_states[1:]
+
+            for action, compare_state in zip(actions, future_states):
+                state = next_state(state, action)
+                cost += torch.sum( torch.abs(state - compare_state) )
 
         return cost
 
