@@ -15,24 +15,25 @@ def main():
     start_state = torch.tensor([0,0,1, 0,0,0, 0,0,0, 0,0,0])
     end_state   = torch.tensor([10,0,1, 0,0,0, 0,0,0, 0,0,0])
 
-    steps = 50
+    steps = 10
 
     traj = Trajectory(start_state, end_state, steps)
 
-    # opt = torch.optim.Adam(traj.params, lr=0.01)
+    opt = torch.optim.Adam(traj.params(), lr=0.1)
 
-    # for it in range(1000):
-    #     opt.zero_grad()
-    #     loss = traj.total_cost()
-    #     print(it, loss)
-    #     loss.backward()
+    for it in range(100):
+        opt.zero_grad()
+        loss = traj.total_cost()
+        print(it, loss)
+        loss.backward()
 
-    #     opt.step()
+        opt.step()
 
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1, projection='3d')
-    traj.plot(ax)
-
+    fig = plt.figure(figsize=plt.figaspect(2.))
+    ax3d = fig.add_subplot(2, 1, 1, projection='3d')
+    ax2d = fig.add_subplot(2, 1, 2)
+    traj.plot(ax3d)
+    traj.plot_action(ax2d) 
     plt.show()
 
 
@@ -43,9 +44,18 @@ class Trajectory:
 
         slider = torch.linspace(0, 1, steps)[1:-1, None]
 
-        self.states = slider * start_state + (1-slider) * end_state
+        states = (1-slider) * start_state + slider * end_state
+        self.states = torch.tensor(states, requires_grad=True)
 
-        self.actions = torch.zeros(steps-1, 4)
+        self.actions = torch.zeros(steps-1, 4, requires_grad=True)
+
+    def plot_action(self, ax):
+        actions = self.actions.detach().numpy() 
+        ax.plot(actions[...,0], label="fz")
+        ax.plot(actions[...,1], label="tx")
+        ax.plot(actions[...,2], label="ty")
+        ax.plot(actions[...,3], label="tz")
+        ax.legend()
 
     def plot(self, ax):
         states = self.all_states()
@@ -94,7 +104,7 @@ class Trajectory:
         states = self.all_states()
         for action, state, n_state in zip(self.actions, states[:-1], states[1:]):
             pred_state = next_state(state,action)
-            cost += torch.abs( pred_state - n_state)
+            cost += torch.sum( torch.abs( pred_state - n_state) )
 
         return cost
 
@@ -102,22 +112,37 @@ class Trajectory:
         cost = 0
         for action in self.actions:
             cost += action[0]**2
-            cost += (action[1:])**2
+            cost += torch.sum( (action[1:])**2 )
         return cost
 
     def total_cost(self):
-        return self.dynamics_cost() + self.action_cost()
+        return self.dynamics_cost()# + 0.1* self.action_cost()
 
 @typechecked
 def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":..., 3]:
     batch_dims = R.shape[:-2]
 
     trace = torch.diagonal(R, dim1=-2, dim2=-1).sum(-1)
-    angle = torch.arccos((trace - 1) / 2)[..., None]
+
+    def acos_safe(x, eps=1e-4):
+        """https://github.com/pytorch/pytorch/issues/8069"""
+        slope = np.arccos(1-eps) / eps
+        # TODO: stop doing this allocation once sparse gradients with NaNs (like in
+        # th.where) are handled differently.
+        buf = torch.empty_like(x)
+        good = abs(x) <= 1-eps
+        bad = ~good
+        sign = torch.sign(x[bad])
+        buf[good] = torch.acos(x[good])
+        buf[bad] = torch.acos(sign * (1 - eps)) - slope*sign*(abs(x[bad]) - 1 + eps)
+        return buf
+
+    angle = acos_safe((trace - 1) / 2)[..., None]
+    # print(trace, angle)
 
     vec = (
         1
-        / (2 * torch.sin(angle))
+        / (2 * torch.sin(angle + 1e-5))
         * torch.stack(
             [
                 R[..., 2, 1] - R[..., 1, 2],
@@ -167,6 +192,7 @@ def skew_matrix(vec: TensorType["batch":..., 3]) -> TensorType["batch":..., 3,3]
 
 
 def next_state(state, action):
+    #TODO batch this
     pos = state[...,0:3]
     v   = state[...,3:6]
     euler_vector = state[...,6:9]
@@ -185,7 +211,7 @@ def next_state(state, action):
 
     R = vec_to_rot_matrix(euler_vector)
 
-    dv = g * e3 + R @ (fz * e3) / m
+    dv = g * e3 + R @ (fz * e3) / mass
     domega = J_inv @ torque - J_inv @ skew_matrix(omega) @ J @ omega
     dpos = dt * v
 
@@ -194,7 +220,7 @@ def next_state(state, action):
     next_omega = domega * dt
     next_pos = dpos * dt
 
-    next_state = torch.cat([next_pos, next_v, next_euler_vector, next_omega], dim=-1)
+    next_state = torch.cat([next_pos, next_v, next_euler, next_omega], dim=-1)
     return next_state
 
 
