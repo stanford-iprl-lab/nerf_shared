@@ -12,8 +12,8 @@ from typeguard import typechecked
 patch_typeguard()
 
 def main():
-    start_state = torch.tensor([0,0,1.0, 0,10,0, 0,0,0, 0.1,0,0])
-    end_state   = torch.tensor([10,0,1.0, 0,-10,0, 0,0.5,0, 0.5,0,0])
+    start_state = torch.tensor([0,0, 1.0, 0,10,0,  -0.5,0,0,   0.1,0.1,0])
+    end_state   = torch.tensor([10,0,1.0, 0,-10,0,  0.5,0.5,0, 0.5,0,0])
 
     steps = 10
 
@@ -22,7 +22,7 @@ def main():
     opt = torch.optim.Adam(traj.params(), lr=0.1)
     # opt = torch.optim.Adam([traj.actions], lr=0.1)
 
-    # act = torch.tensor([ 20.0, 0, 1,0.0])
+    # act = torch.tensor([ 10.0, 0,0,0.0])
     # state = start_state.clone()
     # for i in range(steps - 2):
     #     state = next_state(state, act)
