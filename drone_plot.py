@@ -12,20 +12,29 @@ from typeguard import typechecked
 patch_typeguard()
 
 def main():
-    start_state = torch.tensor([0,0,1, 0,0,0, 0,0,0, 0,0,0])
-    end_state   = torch.tensor([10,0,1, 0,0,0, 0,0,0, 0,0,0])
+    start_state = torch.tensor([0,0,1.0, 0,10,0, 0,0,0, 0.1,0,0])
+    end_state   = torch.tensor([10,0,1.0, 0,-10,0, 0,0.5,0, 0.5,0,0])
 
     steps = 10
 
     traj = Trajectory(start_state, end_state, steps)
 
     opt = torch.optim.Adam(traj.params(), lr=0.1)
+    # opt = torch.optim.Adam([traj.actions], lr=0.1)
 
-    for it in range(100):
+    # act = torch.tensor([ 20.0, 0, 1,0.0])
+    # state = start_state.clone()
+    # for i in range(steps - 2):
+    #     state = next_state(state, act)
+    #     traj.states[i] = state.clone()
+
+
+    for it in range(200):
         opt.zero_grad()
         loss = traj.total_cost()
         print(it, loss)
         loss.backward()
+        print(traj.actions.grad)
 
         opt.step()
 
@@ -45,7 +54,8 @@ class Trajectory:
         slider = torch.linspace(0, 1, steps)[1:-1, None]
 
         states = (1-slider) * start_state + slider * end_state
-        self.states = torch.tensor(states, requires_grad=True)
+        # self.states = torch.tensor(states, requires_grad=True)
+        self.states = torch.tensor(states)
 
         self.actions = torch.zeros(steps-1, 4, requires_grad=True)
 
@@ -55,6 +65,15 @@ class Trajectory:
         ax.plot(actions[...,1], label="tx")
         ax.plot(actions[...,2], label="ty")
         ax.plot(actions[...,3], label="tz")
+
+
+        cost = []
+        states = self.all_states()
+        for action, state, n_state in zip(self.actions, states[:-1], states[1:]):
+            pred_state = next_state(state,action)
+            cost.append( torch.sum( torch.abs( pred_state - n_state) ).detach() )
+        ax.plot(cost, label="cost")
+
         ax.legend()
 
     def plot(self, ax):
@@ -205,7 +224,7 @@ def next_state(state, action):
 
     mass = 1
     dt = 0.1
-    g = 10
+    g = -10
     J = torch.eye(3)
     J_inv = torch.linalg.inv(J)
 
@@ -213,12 +232,13 @@ def next_state(state, action):
 
     dv = g * e3 + R @ (fz * e3) / mass
     domega = J_inv @ torque - J_inv @ skew_matrix(omega) @ J @ omega
-    dpos = dt * v
+    dpos = v
 
-    next_v = dv * dt
+    next_v = dv * dt + v
     next_euler = rot_matrix_to_vec(R @ vec_to_rot_matrix(omega * dt))
-    next_omega = domega * dt
-    next_pos = dpos * dt
+    # next_euler = rot_matrix_to_vec(R @ vec_to_rot_matrix(omega * dt) @ vec_to_rot_matrix(domega * dt**2))
+    next_omega = domega * dt + omega
+    next_pos = dpos * dt + pos# + 0.5 * dv * dt**2
 
     next_state = torch.cat([next_pos, next_v, next_euler, next_omega], dim=-1)
     return next_state
