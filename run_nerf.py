@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 
 from run_nerf_helpers import *
 from nerf_core import *
-from visual_helpers import *
 from simulate import *
 
 from load_llff import load_llff_data
@@ -292,13 +291,15 @@ def train():
         trajsavedir = os.path.join(basedir, expname, 'trajectory_viz')
         os.makedirs(trajsavedir, exist_ok=True)
         
-        #main_loop(P0, PT, T, N, N_iter, trajsavedir)
+        main_loop(P0, PT, T, N, N_iter, trajsavedir)
         
 
         with torch.no_grad():
             background_pose = torch.tensor([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0.75], [0, 0, 0, 1]])
 
             visualize(background_pose, torch.Tensor(poses).to(device), poses, trajsavedir, render_args, render_kwargs_train)
+
+        
 
         return
     '''    

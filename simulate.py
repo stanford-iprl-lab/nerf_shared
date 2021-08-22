@@ -13,6 +13,12 @@ from tqdm import tqdm, trange
 
 import matplotlib.pyplot as plt
 
+# Import Helper Classes
+from render_functions import Renderer
+from visual_helpers import visualize
+from estimator_helpers import Estimator
+from agent_helpers import Agent
+
 
 ####################### MAIN LOOP ##########################################
 def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter: int, savedir: str, render_args: dict, render_kwargs_train: dict, scene_dir: str) -> None:
@@ -43,13 +49,15 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
 
     '''
 
+    renderer = Renderer(hwf, chunk, render_kwargs_train)
+
     #Initialize Planner and Estimator:
     #Planner should initialize with A*
     #Arguments: Initial Pose P0, final pose PT, Number of Time Steps T, Discretization of A* N
     planner = Planner(P0, PT, T, N)
 
     #Arguments: Number of grad. descent iterations N_iter
-    estimator = Estimator(N_iter)
+    estimator = Estimator(N_iter, 512, 'interest_regions', renderer, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.01, amount=0.8, delta_brightness=0.)
 
     #Arguments: Starting pose P0
     agent = Agent(P0)
@@ -72,7 +80,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         pose_init = future_poses[0]
 
         #Estimate pose from ground truth image initialized from above
-        pose_estimate = estimator.pose_estimate(pose_init, gt_img)
+        pose_estimate = estimator.estimate_pose(pose_init, gt_img)
         pose_estimates.append(pose_estimate)
 
         #Display estimator stats: MSE loss, rotational and translational error

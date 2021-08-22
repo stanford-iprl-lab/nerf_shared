@@ -4,7 +4,7 @@ from nerf_core import *
 from torchtyping import TensorDetail, TensorType
 from typeguard import typechecked
 
-class renderer():
+class Renderer():
     def __init__(self, hwf, chunk, render_kwargs) -> None:
         self.hwf = hwf
         self.chunk = chunk

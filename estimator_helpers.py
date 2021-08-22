@@ -1,7 +1,25 @@
 import numpy as np
 import torch
+import torch.nn as nn
+import cv2
+import skimage
 
-mseloss = lambda x, y : torch.mean((x - y) ** 2)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+#Helper Functions
+def find_POI(img_rgb, DEBUG=False): # img - RGB image in range 0...255
+    img = np.copy(img_rgb)
+    img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    sift = cv2.SIFT_create()
+    keypoints = sift.detect(img_gray, None)
+    xy = [keypoint.pt for keypoint in keypoints]
+    xy = np.array(xy).astype(int)
+    # Remove duplicate points
+    xy_set = set(tuple(point) for point in xy)
+    xy = np.array([list(point) for point in xy_set]).astype(int)
+    return xy # pixel coordinates
+
+img2mse = lambda x, y : torch.mean((x - y) ** 2)
 
 rot_psi = lambda phi: np.array([
         [1, 0, 0, 0],
@@ -28,18 +46,6 @@ trans_t = lambda t: np.array([
         [0, 0, 0, 1]])
 
 def vec2ss_matrix(vector):  # vector to skewsym. matrix
-
-    ss_matrix = np.zeros((3,3))
-    ss_matrix[0, 1] = -vector[2]
-    ss_matrix[0, 2] = vector[1]
-    ss_matrix[1, 0] = vector[2]
-    ss_matrix[1, 2] = -vector[0]
-    ss_matrix[2, 0] = -vector[1]
-    ss_matrix[2, 1] = vector[0]
-
-    return ss_matrix
-
-def vec2ss_matrix_torch(vector):  # vector to skewsym. matrix
 
     ss_matrix = torch.zeros((3,3))
     ss_matrix[0, 1] = -vector[2]
@@ -70,159 +76,144 @@ class camera_transf(nn.Module):
         return T_i
 
 class Estimator():
-    def __init__(self, N_iter) -> None:
+    def __init__(self, N_iter, batch_size, sampling_strategy, renderer, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.01, amount=0.8, delta_brightness=0.) -> None:
+    # Parameters
+        self.batch_size = batch_size
+        self.kernel_size = kernel_size
+        self.lrate = lrate
+        self.sampling_strategy = sampling_strategy
+        #delta_phi, delta_theta, delta_psi, delta_t = args.delta_phi, args.delta_theta, args.delta_psi, args.delta_t
+        self.noise, self.sigma, self.amount = noise, sigma, amount
+        self.delta_brightness = delta_brightness
 
-    batch_size = 512*4
+        self.renderer = renderer
 
-    lrate = .01
+        # create meshgrid from the observed image
+        self.W, self.H, self.focal = self.renderer.hwf
+        self.coords = np.asarray(np.stack(np.meshgrid(np.linspace(0, self.W - 1, self.W), np.linspace(0, self.H - 1, self.H)), -1),
+                            dtype=int)
 
-    phi = 10.
-    theta = 10.
-    psi = 10.
-    trans = 0.1
+    def estimate_pose(self, start_pose, obs_img, obs_img_pose):
 
-    I = 5
+        obs_img = (np.array(obs_img) / 255.).astype(np.float32)
 
-    kernel_size = 5
+        # change brightness of the observed image
+        if self.delta_brightness != 0:
+            obs_img = (np.array(obs_img) / 255.).astype(np.float32)
+            obs_img = cv2.cvtColor(obs_img, cv2.COLOR_RGB2HSV)
+            if self.delta_brightness < 0:
+                obs_img[..., 2][obs_img[..., 2] < abs(self.delta_brightness)] = 0.
+                obs_img[..., 2][obs_img[..., 2] >= abs(self.delta_brightness)] += self.delta_brightness
+            else:
+                lim = 1. - self.delta_brightness
+                obs_img[..., 2][obs_img[..., 2] > lim] = 1.
+                obs_img[..., 2][obs_img[..., 2] <= lim] += self.delta_brightness
+            obs_img = cv2.cvtColor(obs_img, cv2.COLOR_HSV2RGB)
 
-    sampling_strategy = 'interest_regions'
-
-    H, W, focal = hwf
-
-    coords = np.stack(np.meshgrid(np.linspace(0, H-1, H), np.linspace(0, W-1, W)), -1)  # (H, W, 2)
-
-    if render_factor!=0:
-        # Render downsampled for speed
-        H = H//render_factor
-        W = W//render_factor
-        focal = focal/render_factor
-        print('HERE')
-
-    t = time.time()
-
-    obs_img_pose = render_poses[2, :3, :4]
-    obs_img_pose = np.vstack((obs_img_pose, [0, 0, 0, 1.]))
-    img_gt = gt_imgs[2]
-
-    orb = cv.ORB_create()
-    # find the keypoints and descriptors with ORB
-    kp1, des1 = orb.detectAndCompute(img_gt,None)
-
-    img_gt = torch.Tensor(img_gt).to(device)
-
-    print(obs_img_pose)
-
-    pose = rot_phi(phi/180.*np.pi) @ rot_theta(theta/180.*np.pi) @ rot_psi(psi/180.*np.pi) @ trans_t(trans) @ obs_img_pose
-    #pose = trans_t(trans) @ obs_img_pose
-
-    print(pose)
-
-    pose = torch.Tensor(pose).to(device)
-
-    #pose = torch.Tensor(render_poses[15]).to(device) #Take 2nd pose as guess
-    #pose = pose[:3, :4]
-    #pose = torch.row_stack((pose, torch.tensor([0, 0, 0, 1])))
-    
-    #img_gt = torch.Tensor(img_gt[::render_factor, ::render_factor, :]).to(device)     #Take 2nd image as GT
-
-    cam_transf = camera_transf().to(device)
-    optimizer = torch.optim.Adam(params=cam_transf.parameters(), lr=lrate, betas=(0.9, 0.999))
-
-    # calculate angles and translation of the observed image's pose
-    phi_ref = np.arctan2(obs_img_pose[1,0], obs_img_pose[0,0])*180/np.pi
-    theta_ref = np.arctan2(-obs_img_pose[2, 0], np.sqrt(obs_img_pose[2, 1]**2 + obs_img_pose[2, 2]**2))*180/np.pi
-    psi_ref = np.arctan2(obs_img_pose[2, 1], obs_img_pose[2, 2])*180/np.pi
-    translation_ref = np.sqrt(obs_img_pose[0,3]**2 + obs_img_pose[1,3]**2 + obs_img_pose[2,3]**2)
-
-    #Make an array of interest_points and round to nearest pixel
-    interest_pts = [(round(point.pt[1]), round(point.pt[0])) for point in kp1]
-    #Get rid of non-distinct pixels
-    interest_pts = list(set(interest_pts))
-
-    #Turn list of lists into array
-    interest_pts = np.array([list(points) for points in interest_pts])
-
-    print(interest_pts)
-
-    interest_regions = np.zeros((W, H, ), dtype=np.uint8)
-    interest_regions[interest_pts[:,1], interest_pts[:,0]] = 1
-    interest_regions = cv.dilate(interest_regions, np.ones((kernel_size, kernel_size), np.uint8), iterations=I)
-    interest_regions = np.array(interest_regions, dtype=bool)
-    print(coords.shape, interest_regions.shape)
-    interest_regions = coords[interest_regions]
-
-    # not_POI contains all points except of POI
-    coords = np.reshape(coords, [-1,2])  # (H * W, 2)
-    not_POI = set(tuple(point) for point in coords) - set(tuple(point) for point in interest_pts)
-    not_POI = np.array([list(point) for point in not_POI]).astype(int)
-
-    for i in range(500):
-        #print(i, time.time() - t)
-        #t = time.time()
-
-        pose_iter0 = cam_transf(pose)
-
-        rays_o, rays_d = get_rays(H, W, K,pose_iter0)  # (H, W, 3), (H, W, 3)
-
-        if sampling_strategy == 'random':
-            rand_inds = np.random.choice(coords.shape[0], size=batch_size, replace=False)
-            batch = coords[rand_inds]
-
-        elif sampling_strategy == 'interest_regions':
-            rand_inds = np.random.choice(interest_regions.shape[0], size=batch_size, replace=False)
-            batch = interest_regions[rand_inds]
-
+        # apply noise to the observed image
+        if self.noise == 'gaussian':
+            obs_img_noised = skimage.util.random_noise(obs_img, mode='gaussian', var=self.sigma**2)
+        elif self.noise == 's_and_p':
+            obs_img_noised = skimage.util.random_noise(obs_img, mode='s&p', amount=self.amount)
+        elif self.noise == 'pepper':
+            obs_img_noised = skimage.util.random_noise(obs_img, mode='pepper', amount=self.amount)
+        elif self.noise == 'salt':
+            obs_img_noised = skimage.util.random_noise(obs_img, mode='salt', amount=self.amount)
+        elif self.noise == 'poisson':
+            obs_img_noised = skimage.util.random_noise(obs_img, mode='poisson')
         else:
-            print('Unknown sampling strategy')
-            return
+            obs_img_noised = obs_img
 
-        rays_o = rays_o[batch[:, 0], batch[:, 1]]  # (N_rand, 3)
-        rays_d = rays_d[batch[:, 0], batch[:, 1]]
-        batch_rays = torch.stack([rays_o, rays_d], 0)
+        obs_img_noised = (np.array(obs_img_noised) * 255).astype(np.uint8)
 
-        target_s = img_gt[batch[:, 0], batch[:, 1]]  # (N_rand, 3)
+        # find points of interest of the observed image
+        POI = find_POI(obs_img_noised, False)  # xy pixel coordinates of points of interest (N x 2)
+        obs_img_noised = (np.array(obs_img_noised) / 255.).astype(np.float32)
 
-        #####  Core optimization loop  #####
-        rgb, disp, acc, _ = render(H, W, K, chunk=chunk, rays=batch_rays, **render_kwargs)
+        # create sampling mask for interest region sampling strategy
+        interest_regions = np.zeros((self.H, self.W, ), dtype=np.uint8)
+        interest_regions[POI[:,1], POI[:,0]] = 1
+        I = self.dil_iter
+        interest_regions = cv2.dilate(interest_regions, np.ones((self.kernel_size, self.kernel_size), np.uint8), iterations=I)
+        interest_regions = np.array(interest_regions, dtype=bool)
+        interest_regions = self.coords[interest_regions]
 
-        #rgb, disp, acc, _ = render(H, W, K, chunk=chunk, c2w=pose_iter0[:3, :4], **render_kwargs)
+        # not_POI contains all points except of POI
+        coords = self.coords.reshape(self.H * self.W, 2)
+        not_POI = set(tuple(point) for point in coords) - set(tuple(point) for point in POI)
+        not_POI = np.array([list(point) for point in not_POI]).astype(int)
 
-        #print('RGB size', rgb.shape)
+        # Create pose transformation model
+        start_pose = torch.Tensor(start_pose).to(device)
+        cam_transf = camera_transf().to(device)
+        optimizer = torch.optim.Adam(params=cam_transf.parameters(), lr=self.lrate, betas=(0.9, 0.999))
 
-        #print('img shape', img_gt.shape)
+        # calculate angles and translation of the observed image's pose
+        phi_ref = np.arctan2(obs_img_pose[1,0], obs_img_pose[0,0])*180/np.pi
+        theta_ref = np.arctan2(-obs_img_pose[2, 0], np.sqrt(obs_img_pose[2, 1]**2 + obs_img_pose[2, 2]**2))*180/np.pi
+        psi_ref = np.arctan2(obs_img_pose[2, 1], obs_img_pose[2, 2])*180/np.pi
+        translation_ref = np.sqrt(obs_img_pose[0,3]**2 + obs_img_pose[1,3]**2 + obs_img_pose[2,3]**2)
+        #translation_ref = obs_img_pose[2, 3]
 
-        optimizer.zero_grad()
+        for k in range(300):
 
-        output = mseloss(rgb, target_s)
+            if self.sampling_strategy == 'random':
+                rand_inds = np.random.choice(coords.shape[0], size=self.batch_size, replace=False)
+                batch = coords[rand_inds]
 
-        output.backward()
-        optimizer.step()
+            elif self.sampling_strategy == 'interest_points':
+                if POI.shape[0] >= self.batch_size:
+                    rand_inds = np.random.choice(POI.shape[0], size=self.batch_size, replace=False)
+                    batch = POI[rand_inds]
+                else:
+                    batch = np.zeros((self.batch_size, 2), dtype=np.int)
+                    batch[:POI.shape[0]] = POI
+                    rand_inds = np.random.choice(not_POI.shape[0], size=self.batch_size-POI.shape[0], replace=False)
+                    batch[POI.shape[0]:] = not_POI[rand_inds]
 
-        new_lrate = lrate * (0.8 ** ((i + 1) / 100))
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = new_lrate
+            elif self.sampling_strategy == 'interest_regions':
+                rand_inds = np.random.choice(interest_regions.shape[0], size=self.batch_size, replace=False)
+                batch = interest_regions[rand_inds]
 
-        if (i + 1) % 20 == 0 or i == 0:
-            print('Step: ', i)
-            print('Loss: ', output)
+            else:
+                print('Unknown sampling strategy')
+                return
 
-            with torch.no_grad():
-                pose_dummy = pose_iter0.cpu().detach().numpy()
-                # calculate angles and translation of the optimized pose
-                phi = np.arctan2(pose_dummy[1, 0], pose_dummy[0, 0]) * 180 / np.pi
-                theta = np.arctan2(-pose_dummy[2, 0], np.sqrt(pose_dummy[2, 1] ** 2 + pose_dummy[2, 2] ** 2)) * 180 / np.pi
-                psi = np.arctan2(pose_dummy[2, 1], pose_dummy[2, 2]) * 180 / np.pi
-                translation = np.sqrt(pose_dummy[0,3]**2 + pose_dummy[1,3]**2 + pose_dummy[2,3]**2)
-                #translation = pose_dummy[2, 3]
-                # calculate error between optimized and observed pose
-                phi_error = abs(phi_ref - phi) if abs(phi_ref - phi)<300 else abs(abs(phi_ref - phi)-360)
-                theta_error = abs(theta_ref - theta) if abs(theta_ref - theta)<300 else abs(abs(theta_ref - theta)-360)
-                psi_error = abs(psi_ref - psi) if abs(psi_ref - psi)<300 else abs(abs(psi_ref - psi)-360)
-                rot_error = phi_error + theta_error + psi_error
-                translation_error = abs(translation_ref - translation)
-                print('Rotation error: ', rot_error)
-                print('Translation error: ', translation_error)
-                print('-----------------------------------')
+            target_s = obs_img_noised[batch[:, 1], batch[:, 0]]
+            target_s = torch.Tensor(target_s).to(device)
+            pose = cam_transf(start_pose)
 
-                #rgb0, disp, acc, _ = render(H, W, K, chunk=chunk, c2w=pose_iter0[:3,:4], **render_kwargs)
-                #plt.imshow(rgb0.detach().cpu().numpy()), plt.show()
+            rgb = self.renderer.get_img_from_pix(batch, pose)
+
+            optimizer.zero_grad()
+            loss = img2mse(rgb, target_s)
+            loss.backward()
+            optimizer.step()
+
+            new_lrate = self.lrate * (0.8 ** ((k + 1) / 100))
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = new_lrate
+
+            if (k + 1) % 20 == 0 or k == 0:
+                print('Step: ', k)
+                print('Loss: ', loss)
+
+                with torch.no_grad():
+                    pose_dummy = pose.cpu().detach().numpy()
+                    # calculate angles and translation of the optimized pose
+                    phi = np.arctan2(pose_dummy[1, 0], pose_dummy[0, 0]) * 180 / np.pi
+                    theta = np.arctan2(-pose_dummy[2, 0], np.sqrt(pose_dummy[2, 1] ** 2 + pose_dummy[2, 2] ** 2)) * 180 / np.pi
+                    psi = np.arctan2(pose_dummy[2, 1], pose_dummy[2, 2]) * 180 / np.pi
+                    translation = np.sqrt(pose_dummy[0,3]**2 + pose_dummy[1,3]**2 + pose_dummy[2,3]**2)
+                    #translation = pose_dummy[2, 3]
+                    # calculate error between optimized and observed pose
+                    phi_error = abs(phi_ref - phi) if abs(phi_ref - phi)<300 else abs(abs(phi_ref - phi)-360)
+                    theta_error = abs(theta_ref - theta) if abs(theta_ref - theta)<300 else abs(abs(theta_ref - theta)-360)
+                    psi_error = abs(psi_ref - psi) if abs(psi_ref - psi)<300 else abs(abs(psi_ref - psi)-360)
+                    rot_error = phi_error + theta_error + psi_error
+                    translation_error = abs(translation_ref - translation)
+                    print('Rotation error: ', rot_error)
+                    print('Translation error: ', translation_error)
+                    print('-----------------------------------')
+        
+        self.pose_prior = pose.cpu().detach().numpy()
