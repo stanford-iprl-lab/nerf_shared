@@ -1,6 +1,6 @@
-expname = blender_paper_chair
+expname = playground_test
 basedir = ./logs
-datadir = ./data/nerf_synthetic/chair
+datadir = ./data/nerf_synthetic/playground
 dataset_type = blender
 
 no_batching = True

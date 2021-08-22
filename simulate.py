@@ -17,8 +17,9 @@ import matplotlib.pyplot as plt
 from render_functions import Renderer
 from visual_helpers import visualize
 from estimator_helpers import Estimator
-from agent_helpers import Agent
+#from agent_helpers import Agent
 
+DEBUG = True
 
 ####################### MAIN LOOP ##########################################
 def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter: int, savedir: str, render_args: dict, render_kwargs_train: dict, scene_dir: str) -> None:
@@ -52,43 +53,59 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
     chunk = render_args['chunk']
     K = render_args['K']
 
-    renderer = Renderer(hwf, K, chunk, render_kwargs_train)
+    if DEBUG == False:
+        renderer = Renderer(hwf, K, chunk, render_kwargs_train)
 
-    #Initialize Planner and Estimator:
-    #Planner should initialize with A*
-    #Arguments: Initial Pose P0, final pose PT, Number of Time Steps T, Discretization of A* N
-    planner = Planner(P0, PT, T, N)
+        #Initialize Planner and Estimator:
+        #Planner should initialize with A*
+        #Arguments: Initial Pose P0, final pose PT, Number of Time Steps T, Discretization of A* N
+        planner = Planner(P0, PT, T, N)
 
-    #Arguments: Number of grad. descent iterations N_iter
-    estimator = Estimator(N_iter, 512, 'interest_regions', renderer, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.01, amount=0.8, delta_brightness=0.)
+        #Arguments: Number of grad. descent iterations N_iter
+        estimator = Estimator(N_iter, 512, 'interest_regions', renderer, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.01, amount=0.8, delta_brightness=0.)
 
-    #Arguments: Starting pose P0
-    agent = Agent(P0)
+        #Arguments: Starting pose P0
+        agent = Agent(P0)
 
-    #Initialize planner with perfect knowledge of initial pose
-    pose_estimate = P0
+        #Initialize planner with perfect knowledge of initial pose
+        pose_estimate = P0
 
-    true_poses = [P0]
-    pose_estimates = []
-    for iter in trange(N):
-        print(f'Iteration {iter}')
-        #Plan based on estimate of pose at current time step
-        future_poses = planner.plan(pose_estimate)
+        true_poses = [P0]
+        pose_estimates = []
+        for iter in trange(N):
+            print(f'Iteration {iter}')
+            #Plan based on estimate of pose at current time step
+            future_poses = planner.plan(pose_estimate)
 
-        #Step based on recommended action
-        true_pose, gt_img = agent.step()
-        true_poses.append(true_pose)
+            #Step based on recommended action
+            true_pose, gt_img = agent.step()
+            true_poses.append(true_pose)
 
-        #Initialize estimator based on the planner's rollout pose at next time step
-        pose_init = future_poses[0]
+            #Initialize estimator based on the planner's rollout pose at next time step
+            pose_init = future_poses[0]
 
-        #Estimate pose from ground truth image initialized from above. Estimate_pose will print MSE loss and rotational & translational errors.
-        pose_estimate = estimator.estimate_pose(pose_init, gt_img, true_pose)
-        pose_estimates.append(pose_estimate)
+            #Estimate pose from ground truth image initialized from above. Estimate_pose will print MSE loss and rotational & translational errors.
+            pose_estimate = estimator.estimate_pose(pose_init, gt_img, true_pose)
+            pose_estimates.append(pose_estimate)
 
-    #Visualizes the trajectory
-    visualize(background_pose, true_poses, pose_estimates, savedir, render_args, render_kwargs_train)
+        #Visualizes the trajectory
+        with torch.no_grad():
+            pass
+            #visualize(background_pose, true_poses, pose_estimates, savedir, render_args, render_kwargs_train)
+
+    else:
+        ####################################### DEBUGING ENVIRONMENT ####################################################3
+        renderer = Renderer(hwf, K, chunk, render_kwargs_train)
+
+        
+        #plt.figure()
+        #rgb = renderer.get_img_from_pose(torch.eye(4))
+        #plt.imshow(rgb.cpu().detach().numpy())
+        #plt.show()
+        
     
+        #density = renderer.get_density_from_pt(torch.tensor([[[0., 1., 0.], [0., 0.5, 0.]]]))
+        #print('Density', density, density.shape)
     return
 
 ####################### END OF MAIN LOOP ##########################################

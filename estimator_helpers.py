@@ -88,6 +88,8 @@ class Estimator():
 
         self.renderer = renderer
 
+        self.iter = N_iter
+
         # create meshgrid from the observed image
         self.W, self.H, self.focal = self.renderer.hwf
         self.coords = np.asarray(np.stack(np.meshgrid(np.linspace(0, self.W - 1, self.W), np.linspace(0, self.H - 1, self.H)), -1),
@@ -155,7 +157,7 @@ class Estimator():
         translation_ref = np.sqrt(obs_img_pose[0,3]**2 + obs_img_pose[1,3]**2 + obs_img_pose[2,3]**2)
         #translation_ref = obs_img_pose[2, 3]
 
-        for k in range(300):
+        for k in range(self.iter):
 
             if self.sampling_strategy == 'random':
                 rand_inds = np.random.choice(coords.shape[0], size=self.batch_size, replace=False)

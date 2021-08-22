@@ -4,6 +4,8 @@ from nerf_core import *
 from torchtyping import TensorDetail, TensorType
 from typeguard import typechecked
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 class Renderer():
     def __init__(self, hwf, K, chunk, render_kwargs) -> None:
         self.hwf = hwf
@@ -36,14 +38,16 @@ class Renderer():
 
         return rgb
 
-    def get_density_from_pt(self, pt, viewdirs):
-        "NOT SURE ON INPUT AND OUTPUT DIMENSIONS. MUST TEST"
+    def get_density_from_pt(self, pts: TensorType[1, 'N_points', 3], viewdirs=torch.tensor([[1., 1., 1.]], device=device)) -> TensorType['N_points']:
 
-        "[N_rays, N_samples, 3] input for pt ([1, 1, 3]) in this case. Can provide None as view_dir argument to network_query_fn ???. Returns output ([1, 1, 4]: [R, G, B, density])"
+        "[N_rays, N_samples, 3] input for pt ([1, N_points, 3]) in this case. View_dir does not matter, but must be given to network. Returns density of size N_points)"
 
         run_fn = self.network_fn if self.network_fine is None else self.network_fine
         #raw = run_network(pts, fn=run_fn)
-        raw = self.network_query_fn(pt, None, run_fn)
+        raw = self.network_query_fn(pts, viewdirs, run_fn)
 
-        return raw
+        #Make sure differential densities are non-negative
+        density = F.relu(raw[..., 3])
+
+        return density.reshape(-1)
 

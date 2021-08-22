@@ -285,24 +285,23 @@ def train():
             return
 
 ####################### EXECUTING MAIN LOOP ##########################################
-    '''else:
+    else:
         
         render_args = {'hwf': hwf, 'K': K, 'chunk': args.chunk}
         trajsavedir = os.path.join(basedir, expname, 'trajectory_viz')
         os.makedirs(trajsavedir, exist_ok=True)
-        
-        main_loop(P0, PT, T, N, N_iter, trajsavedir)
-        
 
-        with torch.no_grad():
-            background_pose = torch.tensor([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0.75], [0, 0, 0, 1]])
-
-            visualize(background_pose, torch.Tensor(poses).to(device), poses, trajsavedir, render_args, render_kwargs_train)
-
+        P0 = torch.eye(4)
+        PT = torch.eye(4)
+        T = 5
+        N = 5
+        N_iter = 300
+        scene_dir = './scenes/'
         
+        main_loop(P0, PT, T, N, N_iter, trajsavedir, render_args, render_kwargs_train, scene_dir)
 
         return
-    '''    
+        
 
     # Prepare raybatch tensor if batching random rays
     N_rand = args.N_rand
