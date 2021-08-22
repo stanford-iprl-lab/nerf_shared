@@ -37,10 +37,12 @@ class Renderer():
         return rgb
 
     def get_density_from_pt(self, pt, viewdirs):
+        "NOT SURE ON INPUT AND OUTPUT DIMENSIONS. MUST TEST"
+
         "[N_rays, N_samples, 3] input for pt ([1, 1, 3]) in this case. Can provide None as view_dir argument to network_query_fn ???. Returns output ([1, 1, 4]: [R, G, B, density])"
 
         run_fn = self.network_fn if self.network_fine is None else self.network_fine
-#       raw = run_network(pts, fn=run_fn)
+        #raw = run_network(pts, fn=run_fn)
         raw = self.network_query_fn(pt, None, run_fn)
 
         return raw

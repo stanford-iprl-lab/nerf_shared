@@ -51,7 +51,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
     hwf = render_args['hwf']
     chunk = render_args['chunk']
     K = render_args['K']
-    
+
     renderer = Renderer(hwf, K, chunk, render_kwargs_train)
 
     #Initialize Planner and Estimator:
@@ -76,18 +76,15 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         future_poses = planner.plan(pose_estimate)
 
         #Step based on recommended action
-        true_pose, gt_img = agent.step(action)
+        true_pose, gt_img = agent.step()
         true_poses.append(true_pose)
 
         #Initialize estimator based on the planner's rollout pose at next time step
         pose_init = future_poses[0]
 
-        #Estimate pose from ground truth image initialized from above
-        pose_estimate = estimator.estimate_pose(pose_init, gt_img)
+        #Estimate pose from ground truth image initialized from above. Estimate_pose will print MSE loss and rotational & translational errors.
+        pose_estimate = estimator.estimate_pose(pose_init, gt_img, true_pose)
         pose_estimates.append(pose_estimate)
-
-        #Display estimator stats: MSE loss, rotational and translational error
-        display_estimator_loss(true_pose, pose_estimate)
 
     #Visualizes the trajectory
     visualize(background_pose, true_poses, pose_estimates, savedir, render_args, render_kwargs_train)
