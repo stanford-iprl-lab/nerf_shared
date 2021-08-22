@@ -48,8 +48,11 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         
 
     '''
-
-    renderer = Renderer(hwf, chunk, render_kwargs_train)
+    hwf = render_args['hwf']
+    chunk = render_args['chunk']
+    K = render_args['K']
+    
+    renderer = Renderer(hwf, K, chunk, render_kwargs_train)
 
     #Initialize Planner and Estimator:
     #Planner should initialize with A*

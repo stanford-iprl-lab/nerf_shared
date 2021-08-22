@@ -287,7 +287,7 @@ def train():
 ####################### EXECUTING MAIN LOOP ##########################################
     '''else:
         
-        render_args = {'H': H, 'W': W, 'K': K, 'chunk': args.chunk}
+        render_args = {'hwf': hwf, 'K': K, 'chunk': args.chunk}
         trajsavedir = os.path.join(basedir, expname, 'trajectory_viz')
         os.makedirs(trajsavedir, exist_ok=True)
         

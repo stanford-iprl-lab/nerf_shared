@@ -42,7 +42,11 @@ def visualize(background_pose: TensorType[4, 4], true_poses: TensorType["T", 3, 
     #Plot background image
     scale_factor = 0.1
 
-    H, W, K, chunk = render_args['H'], render_args['W'], render_args['K'], render_args['chunk']
+    hwf = render_args['hwf']
+    K = render_args['K']
+    chunk = render_args['chunk']
+
+    H, W, focal = hwf
     rgb, _, _, _ = render(H, W, K, chunk=chunk, c2w=background_pose[:3, :4], **render_kwargs_train)
 
     fig = plt.figure(1)
