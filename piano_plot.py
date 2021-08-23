@@ -46,6 +46,11 @@ class System:
         # self.states = torch.tensor(states, requires_grad=True)
         self.states = states.clone().detach().requires_grad_(True)
 
+        body = torch.stack( torch.meshgrid( torch.linspace(-0.5, 0.5, 10), 
+                                            torch.linspace(-  1,   1, 10) ), dim=-1)
+
+        self.robot_body = body.reshape(-1, 2)
+
     def params(self):
         return [self.states]
 
@@ -67,19 +72,30 @@ class System:
 
         return torch.cat( [lin_vel, rot_vel], dim=-1 )
 
+    def get_hitpoints(self) -> TensorType["states", "points", 2]:
+        states = self.get_states()
+        pos = states[..., :2]
+        rot = states[..., 2]
+
+        # S, 2, P      S, 2, 2               2, P                S, 2, _
+        body_points = self.rot_matrix(rot) @ self.robot_body.T + pos[..., None]
+        return body_points.swapdims(-1,-2)
+
     def get_cost(self):
         actions = self.get_actions()
 
-        x = actions[:, 0]**2
-        y = actions[:, 1]**2
-        a = actions[:, 2]**2
+        x = actions[:, 0]**4
+        y = actions[:, 1]**4
+        a = actions[:, 2]**4
 
         pos = self.get_states()[:-1, :2]
 
         distance = (x**2 + y**2)**0.5 * self.dt
-        density = nerf(pos)**2
+        density = nerf( self.get_hitpoints()[1:,...] )**2
 
-        return y*10 + a*0.1 + 0.01*x + density*distance
+        colision_prob = torch.sum( density, dim = -1) * distance
+
+        return y*10 + a*0.1 + 0.01*x + colision_prob * 0.1
 
     def total_cost(self):
         return torch.sum(self.get_cost())
@@ -120,8 +136,11 @@ class System:
         ax.legend()
 
     def plot_map(self, ax):
-        states = self.get_states()
+        ax.set_aspect('equal')
+        ax.set_xlim(-5, 5)
+        ax.set_ylim(-5, 5)
 
+        states = self.get_states()
         pos = states[..., :2]
         rot = states[..., 2]
 
@@ -130,28 +149,28 @@ class System:
         rot_matrix = rot_matrix.detach().numpy()
         pos        = pos.detach().numpy()
 
-        ax.set_aspect('equal')
-        ax.set_xlim(-5, 5)
-        ax.set_ylim(-5, 5)
+        # PLOT PATH
         ax.plot( * pos.T )
 
-        size = 0.5
+        # PLOTS BODY POINTS
+        # S, P, 2
+        body_points = self.get_hitpoints().detach().numpy()
+        for state_body in body_points:
+            ax.plot( *state_body.T, "g.", ms=72./ax.figure.dpi, alpha = 0.5)
 
+        # PLOTS AXIS
         # create point for origin, plus a right-handed coordinate indicator.
+        size = 0.5
         points = np.array( [[0, 0], [size, 0], [0, size]])
-
         colors = ["r", "b"]
 
-        # P, 2, 3          =  P, 2, 2   @ 2, 3     + P, 2, _
+        # S, 2, 3          =  S, 2, 2   @ 2, 3     + S, 2, _
         points_world_frame = rot_matrix @ points.T + pos[..., None]
-
         for p in range(pos.shape[0]):
             for i in range(1, 3):
-                ax.plot(
-                        points_world_frame[p, 0, [0,i]],
+                ax.plot(points_world_frame[p, 0, [0,i]],
                         points_world_frame[p, 1, [0,i]],
-                    c=colors[i - 1],
-                )
+                        c=colors[i - 1],)
 
 
 def main():
@@ -166,7 +185,7 @@ def main():
 
     opt = torch.optim.Adam(traj.params(), lr=0.05)
 
-    for it in range(500):
+    for it in range(1500):
         opt.zero_grad()
         loss = traj.total_cost()
         print(it, loss)
