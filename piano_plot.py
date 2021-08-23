@@ -5,16 +5,38 @@ import torch.nn.functional as F
 import numpy as np
 
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 
 patch_typeguard()
 
+@typechecked
+def nerf(points: TensorType["batch":..., 2]) -> TensorType["batch":...]:
+    x = points[..., 0]
+    y = points[..., 1]
+
+    sharpness = 8
+
+    return torch.sigmoid(sharpness * (y-2 )) * torch.sigmoid(sharpness * (x-2 )) 
+
+
+def plot_nerf(ax, nerf):
+    linspace = torch.linspace(-5,5, 100)
+
+    # 50, 50, 2
+    coods = torch.stack( torch.meshgrid( linspace, linspace ), dim=-1)
+    density = nerf(coods)
+    density = density.detach().numpy()
+
+    ax.pcolormesh(coods[...,0],coods[...,1],  density, cmap = cm.binary, shading='auto')
+    # plt.pcolormesh(coods[...,0],coods[...,1],  density, cmap = cm.viridis)
+
+
 
 
 class System:
-
     def __init__(self, start_state, end_state, steps):
         self.dt = 0.1
 
@@ -77,6 +99,8 @@ class System:
         ax_map = fig.add_subplot(2, 1, 1)
         ax_graph = fig.add_subplot(2, 1, 2)
         self.plot_map(ax_map)
+        plot_nerf(ax_map, nerf)
+
         self.plot_graph(ax_graph) 
         plt.show()
 
@@ -105,8 +129,8 @@ class System:
         pos        = pos.detach().numpy()
 
         ax.set_aspect('equal')
-        ax.set_xlim(-1, 5)
-        ax.set_ylim(-1, 5)
+        ax.set_xlim(-5, 5)
+        ax.set_ylim(-5, 5)
         ax.plot( * pos.T )
 
         size = 0.5
