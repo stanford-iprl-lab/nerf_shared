@@ -93,9 +93,9 @@ class System:
         distance = (x**2 + y**2)**0.5 * self.dt
         density = nerf( self.get_hitpoints()[1:,...] )**2
 
-        colision_prob = torch.sum( density, dim = -1) * distance
+        colision_prob = torch.mean( density, dim = -1) * distance
 
-        return y*10 + a*0.1 + 0.01*x + colision_prob * 0.1
+        return y*10 + a*0.1 + 0.01*x + colision_prob * 10
 
     def total_cost(self):
         return torch.sum(self.get_cost())
@@ -185,7 +185,7 @@ def main():
 
     opt = torch.optim.Adam(traj.params(), lr=0.05)
 
-    for it in range(1500):
+    for it in range(500):
         opt.zero_grad()
         loss = traj.total_cost()
         print(it, loss)
