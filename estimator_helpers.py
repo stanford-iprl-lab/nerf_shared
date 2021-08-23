@@ -80,6 +80,8 @@ class Estimator():
     # Parameters
         self.batch_size = batch_size
         self.kernel_size = kernel_size
+        self.dil_iter = dil_iter
+
         self.lrate = lrate
         self.sampling_strategy = sampling_strategy
         #delta_phi, delta_theta, delta_psi, delta_t = args.delta_phi, args.delta_theta, args.delta_psi, args.delta_t
@@ -128,22 +130,27 @@ class Estimator():
 
         obs_img_noised = (np.array(obs_img_noised) * 255).astype(np.uint8)
 
-        # find points of interest of the observed image
-        POI = find_POI(obs_img_noised, False)  # xy pixel coordinates of points of interest (N x 2)
+        if self.sampling_strategy == 'interest_regions':
+            # find points of interest of the observed image
+            POI = find_POI(obs_img_noised, False)  # xy pixel coordinates of points of interest (N x 2)
+
         obs_img_noised = (np.array(obs_img_noised) / 255.).astype(np.float32)
 
-        # create sampling mask for interest region sampling strategy
-        interest_regions = np.zeros((self.H, self.W, ), dtype=np.uint8)
-        interest_regions[POI[:,1], POI[:,0]] = 1
-        I = self.dil_iter
-        interest_regions = cv2.dilate(interest_regions, np.ones((self.kernel_size, self.kernel_size), np.uint8), iterations=I)
-        interest_regions = np.array(interest_regions, dtype=bool)
-        interest_regions = self.coords[interest_regions]
+        if self.sampling_strategy == 'interest_regions':
+            # create sampling mask for interest region sampling strategy
+            interest_regions = np.zeros((self.H, self.W, ), dtype=np.uint8)
+            interest_regions[POI[:,1], POI[:,0]] = 1
+            I = self.dil_iter
+            interest_regions = cv2.dilate(interest_regions, np.ones((self.kernel_size, self.kernel_size), np.uint8), iterations=I)
+            interest_regions = np.array(interest_regions, dtype=bool)
+            interest_regions = self.coords[interest_regions]
 
         # not_POI contains all points except of POI
         coords = self.coords.reshape(self.H * self.W, 2)
-        not_POI = set(tuple(point) for point in coords) - set(tuple(point) for point in POI)
-        not_POI = np.array([list(point) for point in not_POI]).astype(int)
+
+        if self.sampling_strategy == 'interest_regions':
+            not_POI = set(tuple(point) for point in coords) - set(tuple(point) for point in POI)
+            not_POI = np.array([list(point) for point in not_POI]).astype(int)
 
         # Create pose transformation model
         start_pose = torch.Tensor(start_pose).to(device)
@@ -155,23 +162,12 @@ class Estimator():
         theta_ref = np.arctan2(-obs_img_pose[2, 0], np.sqrt(obs_img_pose[2, 1]**2 + obs_img_pose[2, 2]**2))*180/np.pi
         psi_ref = np.arctan2(obs_img_pose[2, 1], obs_img_pose[2, 2])*180/np.pi
         translation_ref = np.sqrt(obs_img_pose[0,3]**2 + obs_img_pose[1,3]**2 + obs_img_pose[2,3]**2)
-        #translation_ref = obs_img_pose[2, 3]
 
         for k in range(self.iter):
 
             if self.sampling_strategy == 'random':
                 rand_inds = np.random.choice(coords.shape[0], size=self.batch_size, replace=False)
                 batch = coords[rand_inds]
-
-            elif self.sampling_strategy == 'interest_points':
-                if POI.shape[0] >= self.batch_size:
-                    rand_inds = np.random.choice(POI.shape[0], size=self.batch_size, replace=False)
-                    batch = POI[rand_inds]
-                else:
-                    batch = np.zeros((self.batch_size, 2), dtype=np.int)
-                    batch[:POI.shape[0]] = POI
-                    rand_inds = np.random.choice(not_POI.shape[0], size=self.batch_size-POI.shape[0], replace=False)
-                    batch[POI.shape[0]:] = not_POI[rand_inds]
 
             elif self.sampling_strategy == 'interest_regions':
                 rand_inds = np.random.choice(interest_regions.shape[0], size=self.batch_size, replace=False)
@@ -185,9 +181,10 @@ class Estimator():
             target_s = torch.Tensor(target_s).to(device)
             pose = cam_transf(start_pose)
 
-            rgb = self.renderer.get_img_from_pix(batch, pose)
+            rgb = self.renderer.get_img_from_pix(batch, pose, HW=False)
 
             optimizer.zero_grad()
+            #print('Shape', self.H, self.W, obs_img.shape)
             loss = img2mse(rgb, target_s)
             loss.backward()
             optimizer.step()
@@ -219,3 +216,5 @@ class Estimator():
                     print('-----------------------------------')
         
         self.pose_prior = pose.cpu().detach().numpy()
+
+        return pose.cpu().detach().numpy()

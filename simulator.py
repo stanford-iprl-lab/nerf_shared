@@ -1,6 +1,7 @@
 import numpy as np
 
 import quaternion
+import cv2
 
 import habitat_sim
 from habitat_sim.utils import common as utils
@@ -51,7 +52,7 @@ def make_simple_cfg(settings):
             "turn_right", habitat_sim.agent.ActuationSpec(amount=90)
         ),
         "turn_slightly_right": habitat_sim.agent.ActionSpec(
-            "turn_right", habitat_sim.agent.ActuationSpec(amount=360/N)
+            "turn_right", habitat_sim.agent.ActuationSpec(amount=90)
         ),
         "look_down": habitat_sim.agent.ActionSpec(
             "look_down", habitat_sim.agent.ActuationSpec(amount=90)
@@ -78,8 +79,8 @@ class Simulation():
             "scene": self.scene_dir,  # Scene path
             "default_agent": 0,  # Index of the default agent
             "sensor_height": 0,  # Height of sensors in meters, relative to the agent
-            "width": self.h,  # Spatial resolution of the observations
-            "height": self.w,
+            "width": self.w,  # Spatial resolution of the observations
+            "height": self.h,
         }
 
         cfg = make_simple_cfg(sim_settings)
@@ -108,5 +109,9 @@ class Simulation():
         #print("agent_state: position", agent_state.position, "rotation", agent_state.rotation)
 
         obs = self.sim.get_sensor_observations()['color_sensor']
+
+        gray = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
+        mask = cv2.compare(gray,5,cv2.CMP_LT)
+        obs[mask > 0] = 255
 
         return np.array(obs)

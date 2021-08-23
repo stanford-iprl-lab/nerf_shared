@@ -296,7 +296,7 @@ def train():
         T = 5
         N = 5
         N_iter = 300
-        scene_dir = './scenes/'
+        scene_dir = './scenes/' + expname + '/scene.gltf'
         
         main_loop(P0, PT, T, N, N_iter, trajsavedir, render_args, render_kwargs_train, scene_dir)
 
