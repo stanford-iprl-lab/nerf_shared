@@ -18,8 +18,7 @@ def nerf(points: TensorType["batch":..., 2]) -> TensorType["batch":...]:
     y = points[..., 1]
 
     sharpness = 8
-
-    return torch.sigmoid(sharpness * (y-2 )) * torch.sigmoid(sharpness * (x-2 )) 
+    return torch.sigmoid(sharpness * (y-1 )) * torch.sigmoid(sharpness * (x-1 )) 
 
 
 def plot_nerf(ax, nerf):
@@ -32,8 +31,6 @@ def plot_nerf(ax, nerf):
 
     ax.pcolormesh(coods[...,0],coods[...,1],  density, cmap = cm.binary, shading='auto')
     # plt.pcolormesh(coods[...,0],coods[...,1],  density, cmap = cm.viridis)
-
-
 
 
 class System:
@@ -77,7 +74,12 @@ class System:
         y = actions[:, 1]**2
         a = actions[:, 2]**2
 
-        return y*10 + a*0.1 + 0.01*x
+        pos = self.get_states()[:-1, :2]
+
+        distance = (x**2 + y**2)**0.5 * self.dt
+        density = nerf(pos)**2
+
+        return y*10 + a*0.1 + 0.01*x + density*distance
 
     def total_cost(self):
         return torch.sum(self.get_cost())
@@ -153,10 +155,10 @@ class System:
 
 
 def main():
-    start_state = torch.tensor([0,0,0])
+    start_state = torch.tensor([4,0,0])
     # end_state   = torch.tensor([3,3, np.pi/2])
     # end_state   = torch.tensor([3,3, 0])
-    end_state   = torch.tensor([0,3, 0.01])
+    end_state   = torch.tensor([0,4, 0.01])
 
     steps = 20
 
