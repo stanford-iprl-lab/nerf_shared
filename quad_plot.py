@@ -47,38 +47,9 @@ class System:
         return torch.cat( [self.start_state, self.start_state, self.states, self.end_state, self.end_state], dim=0)
 
     def get_actions(self):
-        g = torch.tensor([0,0,-10])
         mass = 1
 
-        states = self.get_states()
-        prev_state = states[:-1, :]
-        next_state = states[1:, :]
-
-        diff = (next_state - prev_state)/self.dt
-        vel = diff[..., :3]
-        # z_world_rate = diff[..., 3:]
-
-        prev_vel = vel[:-1, :]
-        next_vel = vel[1:, :]
-
-        target_accel = (next_vel - prev_vel)/self.dt - g
-        z_accel     = torch.norm(target_accel, dim=-1, keepdim=True)
-
-        # needs to be pointing in direction of acceleration
-        z_axis_body = target_accel/z_accel
-
-        #duplicate first and last angle to enforce zero rotational velocity constraint
-        z_axis_body = torch.cat( [ z_axis_body[:1,:], z_axis_body, z_axis_body[-1:,:], dim=0)
-
-        z_angle = states[:,3]
-        in_plane_heading = torch.stack( torch.cos(z_angle), -torch.sin(z_angle), torch.zeros_like(z_angle), dim=-1)
-
-        x_axis_body = torch.cross(z_axis_body, in_plane_heading, dim=-1)
-        x_axis_body = x_axis_body/torch.norm(x_axis_body, dim=-1, keepdim=True)
-        y_axis_body = torch.cross(z_axis_body, x_axis_body, dim=-1)
-
-        # S, 3, 3 # assembled manually from basis vectors
-        rot_matrix = torch.stack( [x_axis_body, y_axis_body, z_axis_body], dim=-1)
+        rot_matrix, z_accel = self.get_rots_and_accel()
 
         #TODO horrible -> there should be a better way without rotation matricies
         #calculate angular velocities
@@ -113,10 +84,10 @@ class System:
         z_axis_body = target_accel/z_accel
 
         #duplicate first and last angle to enforce zero rotational velocity constraint
-        z_axis_body = torch.cat( [ z_axis_body[:1,:], z_axis_body, z_axis_body[-1:,:], dim=0)
+        z_axis_body = torch.cat( [ z_axis_body[:1,:], z_axis_body, z_axis_body[-1:,:]], dim=0)
 
         z_angle = states[:,3]
-        in_plane_heading = torch.stack( torch.cos(z_angle), -torch.sin(z_angle), torch.zeros_like(z_angle), dim=-1)
+        in_plane_heading = torch.stack( [torch.cos(z_angle), -torch.sin(z_angle), torch.zeros_like(z_angle)], dim=-1)
 
         x_axis_body = torch.cross(z_axis_body, in_plane_heading, dim=-1)
         x_axis_body = x_axis_body/torch.norm(x_axis_body, dim=-1, keepdim=True)
@@ -127,13 +98,14 @@ class System:
         return rot_matrix, z_accel
 
     @typechecked
-    def body_to_world(self, points: TensorType["batch":..., 3]) -> TensorType["states", "batch":..., 3]:
+    def body_to_world(self, points: TensorType["batch", 3]) -> TensorType["states", "batch", 3]:
         states = self.get_states()
         pos = states[:, :3]
+        rot_matrix, _ = self.get_rots_and_accel()
 
-        #TODO ADD ROTATION TRANSFORMATON
-        return points + pos[:, None, :]
-
+        # S, 3, P    =    S,3,3       3,P       S, 3, _
+        world_points =  rot_matrix @ points.T + pos[..., None]
+        return world_points.swapdims(-1,-2)
 
     def get_cost(self):
         actions = self.get_actions()
@@ -160,7 +132,7 @@ class System:
     def plot(self, fig = None):
         if fig == None:
             fig = plt.figure(figsize=plt.figaspect(2.))
-        ax_map = fig.add_subplot(2, 1, 1)
+        ax_map = fig.add_subplot(2, 1, 1, projection='3d')
         ax_graph = fig.add_subplot(2, 1, 2)
         self.plot_map(ax_map)
         plot_nerf(ax_map, nerf)
@@ -169,7 +141,7 @@ class System:
         plt.show()
 
     def plot_graph(self, ax):
-        actions = self.actions.detach().numpy() 
+        actions = self.get_actions().detach().numpy() 
         ax.plot(actions[...,0], label="fz")
         ax.plot(actions[...,1], label="tx")
         ax.plot(actions[...,2], label="ty")
@@ -189,19 +161,21 @@ class System:
         ax.set_zlim3d(-5, 5)
 
         # PLOT PATH
+        # S, 1, 3
         pos = self.body_to_world( torch.zeros((1,3))).detach().numpy()
-        ax.plot( * pos.T )
+        # print(pos.shape)
+        ax.plot( pos[:,0,0], pos[:,0,1],   pos[:,0,2],  )
 
         # PLOTS BODY POINTS
         # S, P, 2
-        body_points = self.body_to_world( self.body_points ).detach().numpy()
-        for state_body in body_points:
-            ax.plot( *state_body.T, "g.", ms=72./ax.figure.dpi, alpha = 0.5)
+        # body_points = self.body_to_world( self.body_points ).detach().numpy()
+        # for state_body in body_points:
+        #     ax.plot( *state_body.T, "g.", ms=72./ax.figure.dpi, alpha = 0.5)
 
         # PLOTS AXIS
         # create point for origin, plus a right-handed coordinate indicator.
         size = 0.5
-        points = np.array( [[0, 0, 0], [size, 0, 0], [0, size, 0], [0, 0, size]])
+        points = torch.tensor( [[0, 0, 0], [size, 0, 0], [0, size, 0], [0, 0, size]])
         colors = ["r", "g", "b"]
 
         # S, 4, 2
@@ -215,8 +189,8 @@ class System:
 
 
 def main():
-    start_state = torch.tensor([0,0,1, 0 ])
-    end_state   = torch.tensor([10,0,1 0.01])
+    start_state = torch.tensor([0,0,1, 0.1 ])
+    end_state   = torch.tensor([10,0,1, 0.01])
 
     steps = 20
 
@@ -224,13 +198,13 @@ def main():
 
     opt = torch.optim.Adam(traj.params(), lr=0.05)
 
-    for it in range(500):
-        opt.zero_grad()
-        loss = traj.total_cost()
-        print(it, loss)
-        loss.backward()
+    # for it in range(500):
+    #     opt.zero_grad()
+    #     loss = traj.total_cost()
+    #     print(it, loss)
+    #     loss.backward()
 
-        opt.step()
+    #     opt.step()
 
     traj.plot()
 

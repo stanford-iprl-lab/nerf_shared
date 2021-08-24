@@ -78,8 +78,8 @@ class System:
         rot = states[..., 2]
 
         # S, 2, P      S, 2, 2               2, P       S, 2, _
-        body_points = self.rot_matrix(rot) @ points.T + pos[..., None]
-        return body_points.swapdims(-1,-2)
+        world_points = self.rot_matrix(rot) @ points.T + pos[..., None]
+        return world_points.swapdims(-1,-2)
 
 
     def get_cost(self):
@@ -140,6 +140,7 @@ class System:
         ax.set_ylim(-5, 5)
 
         # PLOT PATH
+        # S, 1, 2
         pos = self.body_to_world( torch.zeros((1,2))).detach().numpy()
         ax.plot( * pos.T )
 
