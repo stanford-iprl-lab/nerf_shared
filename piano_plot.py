@@ -89,8 +89,6 @@ class System:
         y = actions[:, 1]**4
         a = actions[:, 2]**4
 
-        pos = self.get_states()[:-1, :2]
-
         distance = (x**2 + y**2)**0.5 * self.dt
         density = nerf( self.body_to_world(self.robot_body)[1:,...] )**2
 
