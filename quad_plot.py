@@ -48,6 +48,7 @@ class System:
 
     def get_actions(self):
         g = torch.tensor([0,0,-10])
+        mass = 1
 
         states = self.get_states()
         prev_state = states[:-1, :]
@@ -55,17 +56,37 @@ class System:
 
         diff = (next_state - prev_state)/self.dt
         vel = diff[..., :3]
-        z_world_rate = diff[..., 3:]
+        # z_world_rate = diff[..., 3:]
 
         prev_vel = vel[:-1, :]
         next_vel = vel[1:, :]
 
         target_accel = (next_vel - prev_vel)/self.dt - g
-        z_thrust     = torch.norm(target_accel, dim=-1, keepdim=True)
+        z_accel     = torch.norm(target_accel, dim=-1, keepdim=True)
 
-        z_axis_body = target_accel/z_thrust
-        z_angle = states[1:-1,3]
-        #TODO
+        # needs to be pointing in direction of acceleration
+        z_axis_body = target_accel/z_accel
+
+        #duplicate first and last angle to enforce zero rotational velocity constraint
+        z_axis_body = torch.cat( [ z_axis_body[:1,:], z_axis_body, z_axis_body[-1:,:], dim=0)
+
+        z_angle = states[:,3]
+        in_plane_heading = torch.stack( torch.cos(z_angle), -torch.sin(z_angle), torch.zeros_like(z_angle), dim=-1)
+
+        x_axis_body = torch.cross(z_axis_body, in_plane_heading, dim=-1)
+        x_axis_body = x_axis_body/torch.norm(x_axis_body, dim=-1, keepdim=True)
+        y_axis_body = torch.cross(z_axis_body, x_axis_body, dim=-1)
+
+        # S, 3, 3 # assembled manually from basis vectors
+        rot_matrix = torch.stack( [x_axis_body, y_axis_body, z_axis_body], dim=-1)
+
+
+        #TODO calculate angular velocities
+
+        #TODO calculate torques
+        J = torch.eye(3)
+
+        return torch.cat([ z_accel*mass, torques ], dim=-1)
 
 
     @typechecked
