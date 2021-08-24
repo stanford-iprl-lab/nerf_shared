@@ -156,9 +156,10 @@ class System:
         ax.legend()
 
     def plot_map(self, ax):
-        ax.set_xlim3d(0, 10)
+        ax.auto_scale_xyz([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
         ax.set_ylim3d(-5, 5)
-        ax.set_zlim3d(-5, 5)
+        ax.set_xlim3d(-5, 5)
+        ax.set_zlim3d(0, 10)
 
         # PLOT PATH
         # S, 1, 3
@@ -189,22 +190,21 @@ class System:
 
 
 def main():
-    start_state = torch.tensor([0,0,1, 0.1 ])
-    end_state   = torch.tensor([10,0,1, 0.01])
+    start_state = torch.tensor([-4, 0,1, 0])
+    end_state   = torch.tensor([ 4, 0,1, 0])
 
     steps = 20
 
     traj = System(start_state, end_state, steps)
 
-    opt = torch.optim.Adam(traj.params(), lr=0.05)
+    opt = torch.optim.Adam(traj.params(), lr=0.001)
 
-    # for it in range(500):
-    #     opt.zero_grad()
-    #     loss = traj.total_cost()
-    #     print(it, loss)
-    #     loss.backward()
-
-    #     opt.step()
+    for it in range(500):
+        opt.zero_grad()
+        loss = traj.total_cost()
+        print(it, loss)
+        loss.backward()
+        opt.step()
 
     traj.plot()
 
