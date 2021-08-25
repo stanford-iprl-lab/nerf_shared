@@ -22,15 +22,15 @@ def plot_nerf(ax, nerf):
 
 
 class System:
-    def __init__(self, start_state, end_state, steps):
+    def __init__(self, start_state, end_state, start_vel, end_vel, steps):
         self.dt = 0.1
 
-        self.start_state = start_state[None,:]
-        self.end_state = end_state[None,:]
+        self.start_states = start_state[None,:] + torch.tensor([-1,0,1])[:,None] * self.dt * start_vel
+        self.end_states   = end_state[None,:]   + torch.tensor([-1,0,1])[:,None] * self.dt * end_vel  
 
         slider = torch.linspace(0, 1, steps)[1:-1, None]
 
-        states = (1-slider) * start_state + slider * end_state
+        states = (1-slider) * self.start_states[-1,:] + slider * self.end_states[0,:]
         self.states = states.clone().detach().requires_grad_(True)
 
         # body = torch.stack( torch.meshgrid( torch.linspace(-0.5, 0.5, 10), 
@@ -44,7 +44,7 @@ class System:
 
     def get_states(self):
         # start and end states doubled to enforce zero velocity constraint
-        return torch.cat( [self.start_state, self.start_state, self.states, self.end_state, self.end_state], dim=0)
+        return torch.cat( [self.start_states, self.states, self.end_states], dim=0)
 
     def get_actions(self):
         mass = 1
@@ -116,6 +116,10 @@ class System:
         ty = actions[:, 2]**2
         tz = actions[:, 3]**2
 
+        # jerk =  torch.norm(actions[1:, :] -  actions[:-1, :], dim=-1)**2
+        # duplicate first jerk to match dimention
+        # jerk = torch.cat( [ jerk[:1], jerk], dim=0 )
+
         #TODO
         # vel =
         # distance = (x**2 + y**2)**0.5 * self.dt
@@ -123,7 +127,9 @@ class System:
 
         # colision_prob = torch.mean( density, dim = -1) * distance
 
-        return 0.01*fz + tx + ty + tz
+        # return 0.1*fz + tx + ty + jerk
+        return 1000*fz + tx + ty + tz
+        # return 100*fz + tx + ty + tz + jerk
 
     def total_cost(self):
         return torch.sum(self.get_cost())
@@ -131,13 +137,15 @@ class System:
 
     def plot(self, fig = None):
         if fig == None:
-            fig = plt.figure(figsize=plt.figaspect(2.))
-        ax_map = fig.add_subplot(2, 1, 1, projection='3d')
-        ax_graph = fig.add_subplot(2, 1, 2)
+            fig = plt.figure(figsize=(16, 8))
+
+        ax_map = fig.add_subplot(1, 2, 1, projection='3d')
+        ax_graph = fig.add_subplot(1, 2, 2)
         self.plot_map(ax_map)
         plot_nerf(ax_map, nerf)
 
         self.plot_graph(ax_graph) 
+        plt.tight_layout()
         plt.show()
 
     def plot_graph(self, ax):
@@ -152,7 +160,8 @@ class System:
         # ax.plot(states[...,4], label="vx")
         # ax.plot(states[...,7], label="ey")
 
-        ax.plot(self.get_cost().detach().numpy(), label="cost")
+        ax_right = ax.twinx()
+        ax_right.plot(self.get_cost().detach().numpy(), 'black', label="cost")
         ax.legend()
 
     def plot_map(self, ax):
@@ -193,18 +202,24 @@ def main():
     start_state = torch.tensor([-4, 0,1, 0])
     end_state   = torch.tensor([ 4, 0,1, 0])
 
+    start_vel = torch.tensor([0, 5,  0, 0])
+    end_vel   = torch.tensor([0, 0, 5, 0])
+
     steps = 20
 
-    traj = System(start_state, end_state, steps)
+    traj = System(start_state, end_state, start_vel, end_vel, steps)
 
     opt = torch.optim.Adam(traj.params(), lr=0.001)
 
-    for it in range(500):
-        opt.zero_grad()
-        loss = traj.total_cost()
-        print(it, loss)
-        loss.backward()
-        opt.step()
+    try:
+        for it in range(2500):
+            opt.zero_grad()
+            loss = traj.total_cost()
+            print(it, loss)
+            loss.backward()
+            opt.step()
+    except KeyboardInterrupt:
+        print("finishing early")
 
     traj.plot()
 

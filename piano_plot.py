@@ -131,7 +131,8 @@ class System:
         ax.plot(actions[...,1], label="dy")
         ax.plot(actions[...,2], label="da")
 
-        ax.plot(self.get_cost().detach().numpy(), label="cost")
+        ax_right = ax.twinx()
+        ax_right.plot(self.get_cost().detach().numpy(), label="cost")
         ax.legend()
 
     def plot_map(self, ax):
