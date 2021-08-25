@@ -9,3 +9,5 @@ tqdm
 opencv-python
 torchtyping
 typeguard
+scikit-image
+numpy-quaternion
