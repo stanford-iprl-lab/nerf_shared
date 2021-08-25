@@ -25,6 +25,7 @@ class System:
     def __init__(self, start_state, end_state, start_vel, end_vel, steps):
         self.dt = 0.1
 
+        # create initial and final 3 states to constrain: position, velocity and possibly angle in the future
         self.start_states = start_state[None,:] + torch.tensor([-1,0,1])[:,None] * self.dt * start_vel
         self.end_states   = end_state[None,:]   + torch.tensor([-1,0,1])[:,None] * self.dt * end_vel  
 
@@ -33,17 +34,17 @@ class System:
         states = (1-slider) * self.start_states[-1,:] + slider * self.end_states[0,:]
         self.states = states.clone().detach().requires_grad_(True)
 
-        # body = torch.stack( torch.meshgrid( torch.linspace(-0.5, 0.5, 10), 
-        #                                     torch.linspace(-  1,   1, 10) ), dim=-1)
-        # self.robot_body = body.reshape(-1, 2)
-        self.robot_body = torch.zeros(1,3)
+        body = torch.stack( torch.meshgrid( torch.linspace(-0.5, 0.5, 10),
+                                            torch.linspace(-0.5, 0.5, 10),
+                                            torch.linspace(-0.1, 0.1,  5)), dim=-1)
+        self.robot_body = body.reshape(-1, 3)
+        # self.robot_body = torch.zeros(1,3)
 
 
     def params(self):
         return [self.states]
 
     def get_states(self):
-        # start and end states doubled to enforce zero velocity constraint
         return torch.cat( [self.start_states, self.states, self.end_states], dim=0)
 
     def get_actions(self):
@@ -124,15 +125,12 @@ class System:
         # vel =
         # distance = (x**2 + y**2)**0.5 * self.dt
         # density = nerf( self.get_hitpoints()[1:,...] )**2
-
         # colision_prob = torch.mean( density, dim = -1) * distance
 
-        # return 0.1*fz + tx + ty + jerk
         return 1000*fz + tx + ty + tz
-        # return 100*fz + tx + ty + tz + jerk
 
     def total_cost(self):
-        return torch.sum(self.get_cost())
+        return torch.mean(self.get_cost())
 
 
     def plot(self, fig = None):
@@ -178,9 +176,9 @@ class System:
 
         # PLOTS BODY POINTS
         # S, P, 2
-        # body_points = self.body_to_world( self.body_points ).detach().numpy()
-        # for state_body in body_points:
-        #     ax.plot( *state_body.T, "g.", ms=72./ax.figure.dpi, alpha = 0.5)
+        body_points = self.body_to_world( self.robot_body ).detach().numpy()
+        for state_body in body_points:
+            ax.plot( *state_body.T, "g.", ms=72./ax.figure.dpi, alpha = 0.5)
 
         # PLOTS AXIS
         # create point for origin, plus a right-handed coordinate indicator.
@@ -205,7 +203,7 @@ def main():
     start_vel = torch.tensor([0, 5,  0, 0])
     end_vel   = torch.tensor([0, 0, 5, 0])
 
-    steps = 20
+    steps = 40
 
     traj = System(start_state, end_state, start_vel, end_vel, steps)
 
