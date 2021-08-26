@@ -64,7 +64,7 @@ class Agent():
 
         if self.agent_type is None:
             #Naively add noise to the pose and treat that as ground truth.
-            std = 2*1e-2
+            std = 5*1e-2
 
             rot = quaternion.as_rotation_vector(quaternion.from_rotation_matrix(pose[:3, :3]))
             rot = rot + np.random.normal(0, std, size=(3, ))
@@ -114,6 +114,6 @@ class Agent():
         else:
             print('System not identified')
 
-        img = self.sim.get_image(new_pose)
+        img, depth = self.sim.get_image(new_pose)
 
-        return new_pose, img[:, :, :3]
+        return new_pose, img, depth

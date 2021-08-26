@@ -3,8 +3,21 @@ import torch
 import torch.nn as nn
 import cv2
 import skimage
+import matplotlib.pyplot as plt
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+TEST = False
+
+fine_size = 256
+
+l = 1
+
+N = 1
+
+#coarse = lambda x, y: torch.linalg.norm((x - y), ord=2, dim=1)/(torch.sum(torch.linalg.norm((x - y), ord=2, dim=1)))
+coarse = lambda x, y: torch.sum((x - y)**2, dim=1)/torch.sum(torch.sum((x - y)**2, dim=1))
+coarse_depth = lambda x, y: (x - y)**2 / torch.sum((x - y)**2)
 
 #Helper Functions
 def find_POI(img_rgb, DEBUG=False): # img - RGB image in range 0...255
@@ -12,6 +25,7 @@ def find_POI(img_rgb, DEBUG=False): # img - RGB image in range 0...255
     img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     sift = cv2.SIFT_create()
     keypoints = sift.detect(img_gray, None)
+
     xy = [keypoint.pt for keypoint in keypoints]
     xy = np.array(xy).astype(int)
     # Remove duplicate points
@@ -20,6 +34,8 @@ def find_POI(img_rgb, DEBUG=False): # img - RGB image in range 0...255
     return xy # pixel coordinates
 
 img2mse = lambda x, y : torch.mean((x - y) ** 2)
+#depth2mse = lambda x, y, z : torch.mean(((x - y) ** 2) * 1./torch.sqrt((torch.max(1e-10 * torch.ones_like(z), z))))
+depth2mse = lambda x, y, z : torch.mean(((x - y) ** 2))
 
 rot_psi = lambda phi: np.array([
         [1, 0, 0, 0],
@@ -97,7 +113,7 @@ class Estimator():
         self.coords = np.asarray(np.stack(np.meshgrid(np.linspace(0, self.W - 1, self.W), np.linspace(0, self.H - 1, self.H)), -1),
                             dtype=int)
 
-    def estimate_pose(self, start_pose, obs_img, obs_img_pose):
+    def estimate_pose(self, start_pose, obs_img, obs_img_pose, obs_img_depth=None):
 
         obs_img = (np.array(obs_img) / 255.).astype(np.float32)
 
@@ -128,13 +144,13 @@ class Estimator():
         else:
             obs_img_noised = obs_img
 
-        obs_img_noised = (np.array(obs_img_noised) * 255).astype(np.uint8)
+        obs_img_noised_POI = (np.array(obs_img_noised) * 255).astype(np.uint8)
 
-        if self.sampling_strategy == 'interest_regions':
+        if self.sampling_strategy == 'interest_regions' or self.sampling_strategy == 'interest_points':
             # find points of interest of the observed image
-            POI = find_POI(obs_img_noised, False)  # xy pixel coordinates of points of interest (N x 2)
+            POI = find_POI(obs_img_noised_POI, False)  # xy pixel coordinates of points of interest (N x 2)
 
-        obs_img_noised = (np.array(obs_img_noised) / 255.).astype(np.float32)
+        #obs_img_noised = (np.array(obs_img_noised) / 255.).astype(np.float32)
 
         if self.sampling_strategy == 'interest_regions':
             # create sampling mask for interest region sampling strategy
@@ -148,7 +164,7 @@ class Estimator():
         # not_POI contains all points except of POI
         coords = self.coords.reshape(self.H * self.W, 2)
 
-        if self.sampling_strategy == 'interest_regions':
+        if self.sampling_strategy == 'interest_points':
             not_POI = set(tuple(point) for point in coords) - set(tuple(point) for point in POI)
             not_POI = np.array([list(point) for point in not_POI]).astype(int)
 
@@ -165,27 +181,104 @@ class Estimator():
 
         for k in range(self.iter):
 
-            if self.sampling_strategy == 'random':
-                rand_inds = np.random.choice(coords.shape[0], size=self.batch_size, replace=False)
-                batch = coords[rand_inds]
+            if k % N == 0:
 
-            elif self.sampling_strategy == 'interest_regions':
-                rand_inds = np.random.choice(interest_regions.shape[0], size=self.batch_size, replace=False)
-                batch = interest_regions[rand_inds]
+                if self.sampling_strategy == 'random':
+                    rand_inds = np.random.choice(coords.shape[0], size=self.batch_size, replace=False)
+                    batch = coords[rand_inds]
 
-            else:
-                print('Unknown sampling strategy')
-                return
+                elif self.sampling_strategy == 'interest_points':
+                    if POI.shape[0] >= self.batch_size:
+                        rand_inds = np.random.choice(POI.shape[0], size=self.batch_size, replace=False)
+                        batch = POI[rand_inds]
+                    else:
+                        batch = np.zeros((self.batch_size, 2), dtype=np.int)
+                        batch[:POI.shape[0]] = POI
+                        rand_inds = np.random.choice(not_POI.shape[0], size=self.batch_size-POI.shape[0], replace=False)
+                        batch[POI.shape[0]:] = not_POI[rand_inds]
+
+                elif self.sampling_strategy == 'interest_regions':
+                    rand_inds = np.random.choice(interest_regions.shape[0], size=self.batch_size, replace=False)
+                    batch = interest_regions[rand_inds]
+
+                else:
+                    print('Unknown sampling strategy')
+                    return
 
             target_s = obs_img_noised[batch[:, 1], batch[:, 0]]
             target_s = torch.Tensor(target_s).to(device)
+
+            depth_s = obs_img_depth[batch[:, 1], batch[:, 0]]
+            depth_s = torch.Tensor(depth_s).to(device)
+
             pose = cam_transf(start_pose)
 
-            rgb = self.renderer.get_img_from_pix(batch, pose, HW=False)
+            rgb, depth = self.renderer.get_img_from_pix(batch, pose, HW=False, NeedDepth=True)
+
+            depth_val = depth[0]
+            depth_var = depth[1]
 
             optimizer.zero_grad()
-            #print('Shape', self.H, self.W, obs_img.shape)
-            loss = img2mse(rgb, target_s)
+
+            #Performs another layer of interest region sampling
+            if TEST == True:
+
+                #Distribution of Coarse Loss
+                #coarse_dist = coarse(rgb, target_s)
+                coarse_dist = coarse_depth(depth_val, depth_s)
+                coarse_dist = coarse_dist.cpu().detach().numpy()
+
+                #Sample from this distribution to get the (x,y) coordinates (and their surrounding regions) that we will later sample the fine points from.
+                ind_fine = np.random.choice(rgb.shape[0], size=fine_size, replace=True, p=coarse_dist)
+                batch_fine = batch[ind_fine]
+
+                points_fine = np.empty((0, 2), int)
+                for inter_point in batch_fine:
+                    # create sampling mask for interest region sampling strategy
+                    interest_regions_fine = np.zeros((self.H, self.W, ), dtype=np.uint8)
+                    interest_regions_fine[inter_point[1], inter_point[0]] = 1
+                    I = self.dil_iter
+                    interest_regions_fine = cv2.dilate(interest_regions_fine, np.ones((self.kernel_size, self.kernel_size), np.uint8), iterations=I)
+                    interest_regions_fine = np.array(interest_regions_fine, dtype=bool)
+                    interest_regions_fine = self.coords[interest_regions_fine]
+
+                    #Sample in interest region around the fine points
+                    rand_inds_fine = np.random.choice(interest_regions_fine.shape[0])
+                    point_fine = interest_regions_fine[rand_inds_fine]
+                    points_fine = np.append(points_fine,np.array([point_fine]), axis=0)
+
+
+                #Points fine is like batch, but for all the fine points
+                target_s_fine = obs_img_noised[points_fine[:, 1], points_fine[:, 0]]
+                target_s_fine = torch.Tensor(target_s_fine).to(device)
+
+                depth_s_fine = obs_img_depth[points_fine[:, 1], points_fine[:, 0]]
+                depth_s_fine = torch.Tensor(depth_s_fine).to(device)
+
+                rgb_fine, depth_fine = self.renderer.get_img_from_pix(points_fine, pose, HW=False, NeedDepth=True)
+
+                depth_fine_val = depth_fine[0]
+                depth_fine_var = depth_fine[1]
+
+                loss_rgb_fine = img2mse(rgb_fine, target_s_fine)
+
+                loss_depth_fine = depth2mse(depth_fine_val, depth_s_fine, depth_fine_var)
+
+                loss_rgb = img2mse(rgb, target_s)
+
+                loss_depth = depth2mse(depth_val, depth_s, depth_var)
+
+                loss = loss_rgb + loss_depth + loss_rgb_fine + loss_depth_fine
+
+            else:
+                loss_rgb = img2mse(rgb, target_s)
+
+                loss_depth = depth2mse(depth_val, depth_s, depth_var)
+
+                loss = l*loss_rgb + loss_depth
+
+                #loss = loss_rgb
+
             loss.backward()
             optimizer.step()
 
@@ -214,6 +307,16 @@ class Estimator():
                     print('Rotation error: ', rot_error)
                     print('Translation error: ', translation_error)
                     print('-----------------------------------')
+
+                    '''
+                    if (k+1) % 100 == 0:
+                        img_dummy = self.renderer.get_img_from_pose(pose)
+                        plt.figure()
+                        plt.imshow(img_dummy.cpu().detach().numpy())
+                        plt.show()
+                        plt.close()
+                    '''
+                    
         
         self.pose_prior = pose.cpu().detach().numpy()
 

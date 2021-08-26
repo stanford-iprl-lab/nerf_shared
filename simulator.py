@@ -13,11 +13,14 @@ from habitat_sim.utils import viz_utils as vut
 # one for the agent, where you can attach a bunch of sensors
 def make_simple_cfg(settings):
     # simulator backend
+
     sim_cfg = habitat_sim.SimulatorConfiguration()
     sim_cfg.scene_id = settings["scene"]
 
     # agent
     agent_cfg = habitat_sim.agent.AgentConfiguration()
+
+    sensor_specs = []
 
     # In the 1st example, we attach only one sensor,
     # a RGB visual sensor, to the agent
@@ -26,8 +29,22 @@ def make_simple_cfg(settings):
     rgb_sensor_spec.sensor_type = habitat_sim.SensorType.COLOR
     rgb_sensor_spec.resolution = [settings["height"], settings["width"]]
     rgb_sensor_spec.position = [0.0, settings["sensor_height"], 0.0]
+    rgb_sensor_spec.orientation = [0.0, 0., 0.0]
+    rgb_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
+    sensor_specs.append(rgb_sensor_spec)
 
-    agent_cfg.sensor_specifications = [rgb_sensor_spec]
+    print('Sensor Height', [0.0, settings["sensor_height"], 0.0])
+
+    depth_camera_1stperson_spec = habitat_sim.CameraSensorSpec()
+    depth_camera_1stperson_spec.uuid = "depth_camera"
+    depth_camera_1stperson_spec.sensor_type = habitat_sim.SensorType.DEPTH
+    depth_camera_1stperson_spec.resolution = [settings["height"], settings["width"]]
+    depth_camera_1stperson_spec.position = [0.0, settings["sensor_height"], 0.0]
+    depth_camera_1stperson_spec.orientation = [0.0, 0., 0.0]
+    depth_camera_1stperson_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
+    sensor_specs.append(depth_camera_1stperson_spec)
+
+    agent_cfg.sensor_specifications = sensor_specs
 
     agent_cfg.action_space = {
         "move_forward": habitat_sim.agent.ActionSpec(
@@ -78,7 +95,7 @@ class Simulation():
         sim_settings = {
             "scene": self.scene_dir,  # Scene path
             "default_agent": 0,  # Index of the default agent
-            "sensor_height": 0,  # Height of sensors in meters, relative to the agent
+            "sensor_height": 0.,  # Height of sensors in meters, relative to the agent
             "width": self.w,  # Spatial resolution of the observations
             "height": self.h,
         }
@@ -98,6 +115,7 @@ class Simulation():
         #Set Translation
         agent_state = habitat_sim.AgentState()
         translation = c2w[:3, 3]
+
         agent_state.position = translation  # in world space
 
         #Set rotation. Simulator rotation properties are in camera to world.
@@ -110,8 +128,10 @@ class Simulation():
 
         obs = self.sim.get_sensor_observations()['color_sensor']
 
+        depth = self.sim.get_sensor_observations()['depth_camera']
+
         gray = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
         mask = cv2.compare(gray,5,cv2.CMP_LT)
         obs[mask > 0] = 255
 
-        return np.array(obs)
+        return np.array(obs), depth

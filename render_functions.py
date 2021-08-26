@@ -18,7 +18,7 @@ class Renderer():
         self.network_fine = render_kwargs["network_fine"]
         self.network_query_fn = render_kwargs["network_query_fn"]
 
-    def get_img_from_pix(self, pix: TensorType['NumPixels', 2], pose: TensorType[4, 4], HW=True) -> TensorType['NumPixels', 3]:
+    def get_img_from_pix(self, pix: TensorType['NumPixels', 2], pose: TensorType[4, 4], HW=True, NeedDepth=False) -> TensorType['NumPixels', 3]:
         "Returns colors of subsampled image at the pixels specified by the input ([[x1, y1], [x2, y2], ...])"
 
         rays_o, rays_d = get_rays(self.H, self.W, self.K, pose)  # (H, W, 3), (H, W, 3)
@@ -32,16 +32,22 @@ class Renderer():
 
         batch_rays = torch.stack([rays_o, rays_d], 0)
 
-        rgb, _, _, _ = render(self.H, self.W, self.K, chunk=self.chunk, rays=batch_rays, **self.render_kwargs)
+        rgb, _, _, extras = render(self.H, self.W, self.K, chunk=self.chunk, rays=batch_rays, **self.render_kwargs)
 
-        return rgb
+        if NeedDepth == True:
+            return rgb, (extras['depth'], extras['depth_var'])
+        else:
+            return rgb
 
-    def get_img_from_pose(self, pose: TensorType[4, 4]) -> TensorType['H', 'W', 3]:
+    def get_img_from_pose(self, pose: TensorType[4, 4], NeedDepth=False) -> TensorType['H', 'W', 3]:
         "Returns colors of subsampled image at the pixels specified by the input ([[x1, y1], [x2, y2], ...])"
 
-        rgb, _, _, _ = render(self.H, self.W, self.K, chunk=self.chunk, c2w=pose[:3, :4], **self.render_kwargs)
+        rgb, _, _, extras = render(self.H, self.W, self.K, chunk=self.chunk, c2w=pose[:3, :4], **self.render_kwargs)
 
-        return rgb
+        if NeedDepth == True:
+            return rgb, (extras['depth'], extras['depth_var'])
+        else:
+            return rgb
 
     def get_density_from_pt(self, pts: TensorType[1, 'N_points', 3], viewdirs=torch.tensor([[1., 1., 1.]], device=device)) -> TensorType['N_points']:
 

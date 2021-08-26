@@ -5,7 +5,7 @@ import json
 import random
 import time
 import torch
-from skimage.transform import resize
+from habitat_sim.utils import viz_utils as vut
 
 from torchtyping import TensorDetail, TensorType
 from typeguard import typechecked
@@ -99,17 +99,28 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         ####################################### DEBUGING ENVIRONMENT ####################################################3
         renderer = Renderer(hwf, K, chunk, render_kwargs_train)
 
-        estimator = Estimator(N_iter, 512, 'interest_regions', renderer, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0., amount=0., delta_brightness=0.)
+        estimator = Estimator(N_iter, 256, 'interest_regions', renderer, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.0, amount=0., delta_brightness=0.)
 
         agent = Agent(P0, scene_dir, hwf, agent_type=None)
 
-        true_pose, gt_img = agent.step(P0.cpu().detach().numpy())  
+        true_pose, gt_img, gt_depth = agent.step(P0.cpu().detach().numpy()) 
 
-        #plt.figure()
-        #plt.imshow(gt_img)
+        #Using NeRF image as ground truth for debugging
+        #gt_img_nerf, depth_img_nerf = renderer.get_img_from_pose(torch.tensor(true_pose), NeedDepth=True)
+
+        plt.figure()
+        plt.imshow(gt_img)
+        plt.show()
+
+
+        #fig, axs = plt.subplots(4)
+        #axs[0].imshow(gt_img)
+        #axs[1].imshow(vut.depth_to_rgb(gt_depth))
+        #axs[2].imshow(gt_img_nerf.cpu().detach().numpy())
+        #axs[3].imshow(vut.depth_to_rgb(depth_img_nerf.cpu().detach().numpy()))
         #plt.show()
 
-        pose_estimate = estimator.estimate_pose(P0, gt_img, true_pose)
+        pose_estimate = estimator.estimate_pose(P0, gt_img[..., :3], true_pose, gt_depth)
 
         #print(pose_estimate, true_pose, P0)     
     
