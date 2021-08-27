@@ -79,6 +79,13 @@ def get_nerf():
     def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
         out_shape = points.shape[:-1]
         points = points.reshape(1, -1, 3)
+
+        mapping = torch.tensor([[1, 0, 0],
+                                [0, 0, 1],
+                                [0,-1, 0]])
+
+        points = points @ mapping.T
+
         output = renderer.get_density_from_pt(points)
         return output.reshape(*out_shape)
 
