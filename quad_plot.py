@@ -14,7 +14,10 @@ patch_typeguard()
 
 @typechecked
 def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
-    pass
+    x = points[..., 0]
+    y = points[..., 1] - 1
+
+    return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
 
 
 def plot_nerf(ax, nerf):
@@ -54,7 +57,11 @@ class System:
 
         #TODO horrible -> there should be a better way without rotation matricies
         #calculate angular velocities
-        ang_vel = rot_matrix_to_vec( rot_matrix[1:, ...] @ torch.linalg.inv( rot_matrix[:-1, ...]) ) / self.dt
+        ang_vel = rot_matrix_to_vec( rot_matrix[1:, ...] @ rot_matrix[:-1, ...].swapdims(-1,-2) ) / self.dt
+
+        # if not torch.allclose( rot_matrix @ rot_matrix.swapdims(-1,-2), torch.eye(3)):
+        #     print( rot_matrix @ rot_matrix.swapdims(-1,-2), torch.eye(3) )
+        #     assert False
 
         #calculate angular acceleration
         angular_accel = (ang_vel[1:,...] - ang_vel[:-1,...])/self.dt
@@ -88,7 +95,7 @@ class System:
         z_axis_body = torch.cat( [ z_axis_body[:1,:], z_axis_body, z_axis_body[-1:,:]], dim=0)
 
         z_angle = states[:,3]
-        in_plane_heading = torch.stack( [torch.cos(z_angle), -torch.sin(z_angle), torch.zeros_like(z_angle)], dim=-1)
+        in_plane_heading = torch.stack( [torch.sin(z_angle), -torch.cos(z_angle), torch.zeros_like(z_angle)], dim=-1)
 
         x_axis_body = torch.cross(z_axis_body, in_plane_heading, dim=-1)
         x_axis_body = x_axis_body/torch.norm(x_axis_body, dim=-1, keepdim=True)
@@ -111,23 +118,20 @@ class System:
     def get_cost(self):
         actions = self.get_actions()
 
-        fz = actions[:, 0]**2
-
-        tx = actions[:, 1]**2
-        ty = actions[:, 2]**2
-        tz = actions[:, 3]**2
-
-        # jerk =  torch.norm(actions[1:, :] -  actions[:-1, :], dim=-1)**2
-        # duplicate first jerk to match dimention
-        # jerk = torch.cat( [ jerk[:1], jerk], dim=0 )
+        fz = actions[:, 0]
+        torques = torch.norm(actions[:, 1:], dim=-1)**2
 
         #TODO
-        # vel =
-        # distance = (x**2 + y**2)**0.5 * self.dt
-        # density = nerf( self.get_hitpoints()[1:,...] )**2
-        # colision_prob = torch.mean( density, dim = -1) * distance
+        states = self.get_states()
+        prev_state = states[:-1, :]
+        next_state = states[1:, :]
 
-        return 1000*fz + tx + ty + tz
+        distance = torch.sum( (next_state - prev_state)[...,:3]**2 + 1e-5, dim = -1)**0.5
+        density = nerf( self.body_to_world(self.robot_body)[1:,...] )**2
+        colision_prob = torch.mean( density, dim = -1) * distance
+        colision_prob = colision_prob[1:]
+
+        return 1000*fz**2 + 0.01*torques**2 + colision_prob * 1e7
 
     def total_cost(self):
         return torch.mean(self.get_cost())
@@ -200,10 +204,10 @@ def main():
     start_state = torch.tensor([-4, 0,1, 0])
     end_state   = torch.tensor([ 4, 0,1, 0])
 
-    start_vel = torch.tensor([0, 5,  0, 0])
-    end_vel   = torch.tensor([0, 0, 5, 0])
+    start_vel = torch.tensor([0, 0,  0, 0])
+    end_vel   = torch.tensor([0, 0, 0, 0])
 
-    steps = 40
+    steps = 20
 
     traj = System(start_state, end_state, start_vel, end_vel, steps)
 
