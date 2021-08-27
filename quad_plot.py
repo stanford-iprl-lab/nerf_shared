@@ -149,7 +149,7 @@ class System:
             colision_prob = colision_prob * mask[:, None]
 
         #PARAM cost function shaping
-        return 1000*fz**2 + 0.01*torques**2 + colision_prob * 1e7
+        return 1000*fz**2 + 0.01*torques**2 + colision_prob * 1e4
 
     def total_cost(self):
         return torch.mean(self.get_cost())
@@ -262,11 +262,16 @@ def main():
             print(it, loss)
             loss.backward()
             opt.step()
+
+            save_step = 50
+            if it%save_step == 0:
+                traj.save_poses("paths/"+str(it//save_step)+"_testing.json")
+
     except KeyboardInterrupt:
         print("finishing early")
 
     #PARAM file to save the trajectory
-    traj.save_poses("playground_testing.json")
+    traj.save_poses("paths/playground_testing.json")
     traj.plot()
 
 @typechecked

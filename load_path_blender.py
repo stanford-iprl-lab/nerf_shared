@@ -5,7 +5,11 @@ import json
 from mathutils import Matrix
 
 
-filepath = bpy.path.abspath('//..') + "/playground_testing.json"
+#filepath = bpy.path.abspath('//..') + "/playground_testing.json"
+
+
+save = 3
+filepath = bpy.path.abspath('//../paths/') +str(save)+"_testing.json"
 object_to_copy = bpy.data.objects["Cube"]
 
 
@@ -28,4 +32,5 @@ with open(filepath) as f:
         new_object.parent = path_parent
         new_object.matrix_parent_inverse = path_parent.matrix_world.inverted()
         
-bpy.context.scene.update()
+#bpy.context.scene.update()
+bpy.context.view_layer.update() 
