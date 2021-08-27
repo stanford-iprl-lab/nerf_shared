@@ -14,6 +14,8 @@ from typeguard import typechecked
 
 patch_typeguard()
 
+
+# hard coded "nerf" for testing. see below to import real nerf
 # @typechecked
 # def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
 #     x = points[..., 0]
@@ -21,7 +23,7 @@ patch_typeguard()
 
 #     return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
 
-from nerf_test import get_nerf
+from load_nerf import get_nerf
 nerf = get_nerf()
 
 
@@ -30,8 +32,8 @@ def plot_nerf(ax, nerf):
 
 
 class System:
-    def __init__(self, start_state, end_state, start_vel, end_vel, steps):
-        self.dt = 0.1
+    def __init__(self, start_state, end_state, start_vel, end_vel, steps, dt):
+        self.dt = dt
 
         # create initial and final 3 states to constrain: position, velocity and possibly angle in the future
         self.start_states = start_state[None,:] + torch.tensor([-1,0,1])[:,None] * self.dt * start_vel
@@ -42,12 +44,12 @@ class System:
         states = (1-slider) * self.start_states[-1,:] + slider * self.end_states[0,:]
         self.states = states.clone().detach().requires_grad_(True)
 
+        #PARAM this sets the shape of the robot body point cloud
         body = torch.stack( torch.meshgrid( torch.linspace(-0.05, 0.05, 10),
                                             torch.linspace(-0.05, 0.05, 10),
                                             torch.linspace(-0.02, 0.02,  5)), dim=-1)
         self.robot_body = body.reshape(-1, 3)
         # self.robot_body = torch.zeros(1,3)
-
 
     def params(self):
         return [self.states]
@@ -96,7 +98,7 @@ class System:
         # needs to be pointing in direction of acceleration
         z_axis_body = target_accel/z_accel
 
-        #duplicate first and last angle to enforce zero rotational velocity constraint
+        #duplicate first and last angle to enforce zero angular velocity constraint
         z_axis_body = torch.cat( [ z_axis_body[:1,:], z_axis_body, z_axis_body[-1:,:]], dim=0)
 
         z_angle = states[:,3]
@@ -126,16 +128,17 @@ class System:
         fz = actions[:, 0]
         torques = torch.norm(actions[:, 1:], dim=-1)**2
 
-        #TODO
         states = self.get_states()
         prev_state = states[:-1, :]
         next_state = states[1:, :]
 
+        # multiplied by distance to prevent it from just speed tunnelling
         distance = torch.sum( (next_state - prev_state)[...,:3]**2 + 1e-5, dim = -1)**0.5
         density = nerf( self.body_to_world(self.robot_body)[1:,...] )**2
         colision_prob = torch.mean( density, dim = -1) * distance
         colision_prob = colision_prob[1:]
 
+        #PARAM cost function shaping
         return 1000*fz**2 + 0.01*torques**2 + colision_prob * 1e7
 
     def total_cost(self):
@@ -221,20 +224,24 @@ class System:
 
 
 def main():
-    # first_playground
+    #PARAM start and end positions for the planner. [x,y,z,yaw]
     start_state = torch.tensor([0, -0.8, 0.01, 0])
     end_state   = torch.tensor([0,  0.9, 0.6 , 0])
 
     # start_state = torch.tensor([ 0.25, -0.47, 0.01, 0])
     # end_state   = torch.tensor([-0.25,  0.6,  0.6 , 0])
 
+    #PARAM initial and final velocities
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
+    #PARAM
     steps = 40
+    dt = 0.1
 
-    traj = System(start_state, end_state, start_vel, end_vel, steps)
+    traj = System(start_state, end_state, start_vel, end_vel, steps, dt)
 
+    #PARAM learning rate for the path optimization
     opt = torch.optim.Adam(traj.params(), lr=0.001)
 
     try:
@@ -247,6 +254,7 @@ def main():
     except KeyboardInterrupt:
         print("finishing early")
 
+    #PARAM file to save the trajectory
     traj.save_poses("playground_testing.json")
     traj.plot()
 
