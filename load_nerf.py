@@ -128,9 +128,9 @@ def config_parser():
     return parser
 
 
-def get_nerf():
+def get_nerf(config = 'configs/playground.txt'):
     parser = config_parser()
-    args = parser.parse_args( ["--config", 'configs/playground.txt'] )
+    args = parser.parse_args( ["--config", config] )
 
     render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
 
@@ -159,8 +159,7 @@ def get_nerf():
     return nerf
 
 def main():
-
-    nerf = get_nerf()
+    nerf = get_nerf('configs/playground.txt')
 
     side = 50
     linspace = torch.linspace(-1,1, side)

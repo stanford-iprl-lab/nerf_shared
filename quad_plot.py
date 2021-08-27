@@ -24,11 +24,6 @@ patch_typeguard()
 #     return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
 
 from load_nerf import get_nerf
-nerf = get_nerf()
-
-
-def plot_nerf(ax, nerf):
-    pass
 
 
 class System:
@@ -234,6 +229,12 @@ class System:
 
 
 def main():
+
+
+def plot_nerf(ax, nerf):
+    #PARAM nerf config
+    nerf = get_nerf('configs/playground.txt')
+
     #PARAM start and end positions for the planner. [x,y,z,yaw]
     start_state = torch.tensor([0, -0.8, 0.01, 0])
     end_state   = torch.tensor([0,  0.9, 0.6 , 0])
