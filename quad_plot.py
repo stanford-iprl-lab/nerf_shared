@@ -14,15 +14,15 @@ from typeguard import typechecked
 
 patch_typeguard()
 
-@typechecked
-def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
-    x = points[..., 0]
-    y = points[..., 1] - 1
+# @typechecked
+# def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
+#     x = points[..., 0]
+#     y = points[..., 1] - 1
 
-    return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
+#     return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
 
-# from nerf_test import get_nerf
-# nerf = get_nerf()
+from nerf_test import get_nerf
+nerf = get_nerf()
 
 
 def plot_nerf(ax, nerf):
@@ -173,9 +173,9 @@ class System:
 
     def plot_map(self, ax):
         ax.auto_scale_xyz([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
-        ax.set_ylim3d(-5, 5)
-        ax.set_xlim3d(-5, 5)
-        ax.set_zlim3d(0, 10)
+        ax.set_ylim3d(-1, 1)
+        ax.set_xlim3d(-1, 1)
+        ax.set_zlim3d( 0, 1)
 
         # PLOT PATH
         # S, 1, 3
@@ -191,7 +191,7 @@ class System:
 
         # PLOTS AXIS
         # create point for origin, plus a right-handed coordinate indicator.
-        size = 0.5
+        size = 0.05
         points = torch.tensor( [[0, 0, 0], [size, 0, 0], [0, size, 0], [0, 0, size]])
         colors = ["r", "g", "b"]
 
@@ -221,13 +221,17 @@ class System:
 
 
 def main():
+    # first_playground
     start_state = torch.tensor([0, -0.8, 0.01, 0])
     end_state   = torch.tensor([0,  0.9, 0.6 , 0])
+
+    # start_state = torch.tensor([ 0.25, -0.47, 0.01, 0])
+    # end_state   = torch.tensor([-0.25,  0.6,  0.6 , 0])
 
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
-    steps = 20
+    steps = 40
 
     traj = System(start_state, end_state, start_vel, end_vel, steps)
 
