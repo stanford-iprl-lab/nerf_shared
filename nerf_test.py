@@ -82,7 +82,7 @@ def get_nerf():
 
         mapping = torch.tensor([[1, 0, 0],
                                 [0, 0, 1],
-                                [0,-1, 0]])
+                                [0,-1, 0]], dtype=torch.float)
 
         points = points @ mapping.T
 

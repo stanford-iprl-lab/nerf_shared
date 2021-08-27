@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+import json
+
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
@@ -18,6 +20,9 @@ def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
     y = points[..., 1] - 1
 
     return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
+
+# from nerf_test import get_nerf
+# nerf = get_nerf()
 
 
 def plot_nerf(ax, nerf):
@@ -37,9 +42,9 @@ class System:
         states = (1-slider) * self.start_states[-1,:] + slider * self.end_states[0,:]
         self.states = states.clone().detach().requires_grad_(True)
 
-        body = torch.stack( torch.meshgrid( torch.linspace(-0.5, 0.5, 10),
-                                            torch.linspace(-0.5, 0.5, 10),
-                                            torch.linspace(-0.1, 0.1,  5)), dim=-1)
+        body = torch.stack( torch.meshgrid( torch.linspace(-0.05, 0.05, 10),
+                                            torch.linspace(-0.05, 0.05, 10),
+                                            torch.linspace(-0.02, 0.02,  5)), dim=-1)
         self.robot_body = body.reshape(-1, 3)
         # self.robot_body = torch.zeros(1,3)
 
@@ -200,11 +205,26 @@ class System:
                     c=colors[i - 1],)
 
 
-def main():
-    start_state = torch.tensor([-4, 0,1, 0])
-    end_state   = torch.tensor([ 4, 0,1, 0])
+    def save_poses(self, filename):
+        states = self.get_states()
+        rot_mats, _ = self.get_rots_and_accel()
 
-    start_vel = torch.tensor([0, 0,  0, 0])
+        with open(filename,"w+") as f:
+            for pos, rot in zip(states[...,:3], rot_mats):
+                pose = np.zeros((4,4))
+                pose[:3, :3] = rot.detach().numpy()
+                pose[:3, 3]  = pos.detach().numpy()
+                pose[3,3] = 1
+
+                json.dump(pose.tolist(), f)
+                f.write('\n')
+
+
+def main():
+    start_state = torch.tensor([0, -0.8, 0.01, 0])
+    end_state   = torch.tensor([0,  0.9, 0.6 , 0])
+
+    start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
     steps = 20
@@ -223,6 +243,7 @@ def main():
     except KeyboardInterrupt:
         print("finishing early")
 
+    traj.save_poses("first_playground.json")
     traj.plot()
 
 @typechecked
