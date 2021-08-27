@@ -5,7 +5,7 @@ import json
 from mathutils import Matrix
 
 
-filepath = "/Users/mik/Desktop/nerf-pytorch/first_playground.json"
+filepath = bpy.path.abspath('//..') + "/playground_testing.json"
 object_to_copy = bpy.data.objects["Cube"]
 
 
