@@ -243,7 +243,7 @@ def main():
     except KeyboardInterrupt:
         print("finishing early")
 
-    traj.save_poses("first_playground.json")
+    traj.save_poses("playground_testing.json")
     traj.plot()
 
 @typechecked
