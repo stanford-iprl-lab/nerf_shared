@@ -1,7 +1,12 @@
 
 
+import torch
+
+import matplotlib.pyplot as plt
+
 # from run_nerf_helpers import create_nerf
 from nerf_core import create_nerf
+from render_functions import Renderer
 
 def config_parser():
 
@@ -137,8 +142,45 @@ render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_ne
 
 
 chunk = args.chunk
-hwf = render_args['hwf']
-K = render_args['K']
+hwf = None, None, None #render_args['hwf']
+K = None #render_args['K']
 
 renderer = Renderer(hwf, K, chunk, render_kwargs_train)
+
+# points = torch.tensor([ [0,0,0],
+#                [0.5, 0.5,0.5],
+#                [0.1, 0.1,0.1],
+#                [0.2, 0.2,0.2],
+#                [0.3, 0.3,0.3]])
+
+# points = points[None,...]
+
+side = 50
+
+linspace = torch.linspace(-1,1, side)
+
+# 50, 50, 50, 3
+coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+
+points = coods.reshape(-1, 3)[None,...]
+            
+output = (renderer.get_density_from_pt(points))
+
+
+output = output.reshape(side,side,side)
+
+im = torch.mean( output, dim=1)
+
+x_image = torch.mean( coods, dim=1)[...,0]
+y_image = torch.mean( coods, dim=1)[...,2]
+
+# +z in nerf is -y in blender
+# +y in nerf is +z in blender
+# +x in nerf is +x in blender
+
+plt.pcolormesh(x_image, y_image, im)
+plt.show()
+
+
+
 
