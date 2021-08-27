@@ -15,19 +15,27 @@ from typeguard import typechecked
 patch_typeguard()
 
 
-# hard coded "nerf" for testing. see below to import real nerf
-# @typechecked
-# def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
-#     x = points[..., 0]
-#     y = points[..., 1] - 1
-
-#     return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
-
 from load_nerf import get_nerf
+
+# # hard coded "nerf" for testing. see below to import real nerf
+# def get_nerf(*args, **kwargs):
+#     @typechecked
+#     def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
+#         x = points[..., 0]
+#         y = points[..., 1] - 1
+
+#         return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
+#     return nerf
+
+
+def plot_nerf(ax_map, nerf):
+    # can plot nerf in matplotlib but hard to be interpretable
+    pass
 
 
 class System:
-    def __init__(self, start_state, end_state, start_vel, end_vel, steps, dt):
+    def __init__(self, nerf, start_state, end_state, start_vel, end_vel, steps, dt):
+        self.nerf = nerf
         self.dt = dt
 
         # create initial and final 3 states to constrain: position, velocity and possibly angle in the future
@@ -131,7 +139,7 @@ class System:
 
         # multiplied by distance to prevent it from just speed tunnelling
         distance = torch.sum( (next_state - prev_state)[...,:3]**2 + 1e-5, dim = -1)**0.5
-        density = nerf( self.body_to_world(self.robot_body)[1:,...] )**2
+        density = self.nerf( self.body_to_world(self.robot_body)[1:,...] )**2
         colision_prob = torch.mean( density, dim = -1) * distance
         colision_prob = colision_prob[1:]
 
@@ -157,7 +165,7 @@ class System:
         ax_map = fig.add_subplot(1, 2, 1, projection='3d')
         ax_graph = fig.add_subplot(1, 2, 2)
         self.plot_map(ax_map)
-        plot_nerf(ax_map, nerf)
+        plot_nerf(ax_map, self.nerf)
 
         self.plot_graph(ax_graph) 
         plt.tight_layout()
@@ -229,9 +237,6 @@ class System:
 
 
 def main():
-
-
-def plot_nerf(ax, nerf):
     #PARAM nerf config
     nerf = get_nerf('configs/playground.txt')
 
@@ -250,7 +255,7 @@ def plot_nerf(ax, nerf):
     steps = 40
     dt = 0.1
 
-    traj = System(start_state, end_state, start_vel, end_vel, steps, dt)
+    traj = System(nerf, start_state, end_state, start_vel, end_vel, steps, dt)
 
     #PARAM learning rate for the path optimization
     opt = torch.optim.Adam(traj.params(), lr=0.001)
