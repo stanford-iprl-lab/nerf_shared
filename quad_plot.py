@@ -51,6 +51,8 @@ class System:
         self.robot_body = body.reshape(-1, 3)
         # self.robot_body = torch.zeros(1,3)
 
+        self.epoch = 0
+
     def params(self):
         return [self.states]
 
@@ -137,6 +139,14 @@ class System:
         density = nerf( self.body_to_world(self.robot_body)[1:,...] )**2
         colision_prob = torch.mean( density, dim = -1) * distance
         colision_prob = colision_prob[1:]
+
+        fade_out_epoch = 1000
+        sharpness = 10
+        if self.epoch < fade_out_epoch:
+            t = torch.linspace(0,1, colision_prob.shape[0])
+            position = self.epoch/fade_out_epoch
+            mask = torch.sigmoid(sharpness * (position - t))
+            colision_prob = colision_prob * mask[:, None]
 
         #PARAM cost function shaping
         return 1000*fz**2 + 0.01*torques**2 + colision_prob * 1e7
@@ -247,6 +257,7 @@ def main():
     try:
         for it in range(2500):
             opt.zero_grad()
+            traj.epoch = it
             loss = traj.total_cost()
             print(it, loss)
             loss.backward()
