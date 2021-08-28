@@ -173,14 +173,17 @@ def main():
     into_page_dim, x_dim, y_dim  = 1,  0, 2
     # into_page_dim, x_dim, y_dim  = 2,  0, 1
 
+    # im,_ = torch.max( output, dim=into_page_dim)
     im = torch.mean( output, dim=into_page_dim)
     x_image = torch.mean( coods, dim=into_page_dim)[...,x_dim]
     y_image = torch.mean( coods, dim=into_page_dim)[...,y_dim]
 
+    print(im.shape)
     print("happy")
     # exit()
 
-    plt.pcolormesh(x_image, y_image, im)
+    # plt.pcolormesh(x_image, y_image, im)
+    plt.imshow(im)
     plt.show()
 
 

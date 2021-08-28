@@ -52,7 +52,8 @@ class Renderer():
         raw = self.network_query_fn(pts, viewdirs, run_fn)
 
         #Make sure differential densities are non-negative
-        density = F.relu(raw[..., 3])
+        # density = F.relu(raw[..., 3])
+        density = torch.sigmoid(raw[..., 3] - 1)
 
         return density.reshape(-1)
 

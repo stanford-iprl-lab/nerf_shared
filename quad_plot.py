@@ -143,19 +143,21 @@ class System:
         colision_prob = torch.mean( density, dim = -1) * distance
         colision_prob = colision_prob[1:]
 
+
         fade_out_epoch = 1000
         sharpness = 10
         if self.epoch < fade_out_epoch:
             t = torch.linspace(0,1, colision_prob.shape[0])
             position = self.epoch/fade_out_epoch
             mask = torch.sigmoid(sharpness * (position - t))
-            colision_prob = colision_prob * mask[:, None]
+            colision_prob = colision_prob * mask
 
         #PARAM cost function shaping
-        return 1000*fz**2 + 0.01*torques**2 + colision_prob * 1e4
+        return 1000*fz**2 + 0.01*torques**2 + colision_prob * 1e6, colision_prob*1e6
 
     def total_cost(self):
-        return torch.mean(self.get_cost())
+        total_cost, colision_loss = self.get_cost()
+        return torch.mean(total_cost)
 
 
     def plot(self, fig = None):
@@ -184,7 +186,10 @@ class System:
         # ax.plot(states[...,7], label="ey")
 
         ax_right = ax.twinx()
-        ax_right.plot(self.get_cost().detach().numpy(), 'black', label="cost")
+
+        total_cost, colision_loss = self.get_cost()
+        ax_right.plot(total_cost.detach().numpy(), 'black', label="cost")
+        ax_right.plot(colision_loss.detach().numpy(), 'cyan', label="colision")
         ax.legend()
 
     def plot_map(self, ax):
@@ -241,11 +246,14 @@ def main():
     nerf = get_nerf('configs/playground.txt')
 
     #PARAM start and end positions for the planner. [x,y,z,yaw]
-    start_state = torch.tensor([0, -0.8, 0.01, 0])
-    end_state   = torch.tensor([0,  0.9, 0.6 , 0])
+    # start_state = torch.tensor([0, -0.8, 0.01, 0])
+    # end_state   = torch.tensor([0,  0.9, 0.6 , 0])
+    
+    # start_state = torch.tensor([-0.11, -0.7, 0.7, 0])
+    # end_state   = torch.tensor([-0.11, 0.45, 0.7, 0])
 
-    # start_state = torch.tensor([ 0.25, -0.47, 0.01, 0])
-    # end_state   = torch.tensor([-0.25,  0.6,  0.6 , 0])
+    start_state = torch.tensor([ 0.25, -0.47, 0.01, 0])
+    end_state   = torch.tensor([-0.25,  0.6,  0.6 , 0])
 
     #PARAM initial and final velocities
     start_vel = torch.tensor([0, 0, 0, 0])
