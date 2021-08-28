@@ -14,7 +14,7 @@ path_parent = object_to_copy.copy()
 path_parent.name = "PATH"
 
 
-collection = bpy.data.collections.new("Diag")
+collection = bpy.data.collections.new("Diag_fast")
 bpy.context.scene.collection.children.link(collection)
 
 collection.objects.link(path_parent)

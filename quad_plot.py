@@ -246,21 +246,28 @@ def main():
     nerf = get_nerf('configs/playground.txt')
 
     #PARAM start and end positions for the planner. [x,y,z,yaw]
+    # under
     # start_state = torch.tensor([0, -0.8, 0.01, 0])
     # end_state   = torch.tensor([0,  0.9, 0.6 , 0])
     
+    # upper
     # start_state = torch.tensor([-0.11, -0.7, 0.7, 0])
     # end_state   = torch.tensor([-0.11, 0.45, 0.7, 0])
 
+    # diag
     start_state = torch.tensor([ 0.25, -0.47, 0.01, 0])
     end_state   = torch.tensor([-0.25,  0.6,  0.6 , 0])
+
+    # middle
+    # start_state = torch.tensor([ 0.5, 0.2, 0.3, 0])
+    # end_state   = torch.tensor([-0.3,   0, 0.5 , 0])
 
     #PARAM initial and final velocities
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
     #PARAM
-    steps = 40
+    steps = 20
     dt = 0.1
 
     traj = System(nerf, start_state, end_state, start_vel, end_vel, steps, dt)
