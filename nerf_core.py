@@ -227,7 +227,7 @@ def create_nerf(args):
         ckpt = torch.load(ckpt_path)
 
         start = ckpt['global_step']
-        print("penis")
+
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
 
         # Load model

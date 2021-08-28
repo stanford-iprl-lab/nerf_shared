@@ -11,7 +11,7 @@ TEST = False
 
 fine_size = 256
 
-l = 1
+l = 5
 
 N = 1
 
@@ -75,19 +75,29 @@ def vec2ss_matrix(vector):  # vector to skewsym. matrix
 
 
 class camera_transf(nn.Module):
-    def __init__(self):
+    def __init__(self, state=None):
         super(camera_transf, self).__init__()
-        self.w = nn.Parameter(torch.normal(0., 1e-6, size=(3,)))
-        self.v = nn.Parameter(torch.normal(0., 1e-6, size=(3,)))
-        self.theta = nn.Parameter(torch.normal(0., 1e-6, size=()))
+        if state == None:
+            self.w = nn.Parameter(torch.normal(0., 1e-3, size=(3,)))
+            self.v = nn.Parameter(torch.normal(0., 1e-3, size=(3,)))
+
+        else:
+            #Momentum
+            w = state[0, :]
+            v = state[1, :]
+
+            self.w = nn.Parameter(w + torch.normal(0., 1e-4, size=(3,)))
+            self.v = nn.Parameter(v + torch.normal(0., 1e-4, size=(3,)))
 
     def forward(self, x):
+        self.theta = torch.norm(self.w, p=2)
         exp_i = torch.zeros((4,4))
         w_skewsym = vec2ss_matrix(self.w)
         v_skewsym = vec2ss_matrix(self.v)
         exp_i[:3, :3] = torch.eye(3) + torch.sin(self.theta) * w_skewsym + (1 - torch.cos(self.theta)) * torch.matmul(w_skewsym, w_skewsym)
         exp_i[:3, 3] = torch.matmul(torch.eye(3) * self.theta + (1 - torch.cos(self.theta)) * w_skewsym + (self.theta - torch.sin(self.theta)) * torch.matmul(w_skewsym, w_skewsym), self.v)
         exp_i[3, 3] = 1.
+
         T_i = torch.matmul(exp_i, x)
         return T_i
 
@@ -179,7 +189,15 @@ class Estimator():
         psi_ref = np.arctan2(obs_img_pose[2, 1], obs_img_pose[2, 2])*180/np.pi
         translation_ref = np.sqrt(obs_img_pose[0,3]**2 + obs_img_pose[1,3]**2 + obs_img_pose[2,3]**2)
 
+        loss_store = []
+
+        state = None
+
         for k in range(self.iter):
+
+            start_pose = torch.Tensor(start_pose).to(device)
+            cam_transf = camera_transf(state).to(device)
+            optimizer = torch.optim.Adam(params=cam_transf.parameters(), lr=self.lrate, betas=(0.9, 0.999))
 
             if k % N == 0:
 
@@ -275,12 +293,23 @@ class Estimator():
 
                 loss_depth = depth2mse(depth_val, depth_s, depth_var)
 
-                loss = l*loss_rgb + loss_depth
+                #loss = l*loss_rgb + loss_depth
 
-                #loss = loss_rgb
+                loss = loss_rgb
 
             loss.backward()
             optimizer.step()
+
+            loss_store.append(loss.cpu().detach().numpy())
+
+            start_pose = cam_transf(start_pose)
+            start_pose = start_pose.cpu().detach().numpy()
+
+            #if k > 0:
+            #    if loss_store[k] > loss_store[k-1]:
+            #        state = torch.vstack((cam_transf.w, cam_transf.v))
+            #    else:
+            #        state = None
 
             new_lrate = self.lrate * (0.8 ** ((k + 1) / 100))
             for param_group in optimizer.param_groups:

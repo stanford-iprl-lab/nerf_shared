@@ -99,18 +99,31 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         ####################################### DEBUGING ENVIRONMENT ####################################################3
         renderer = Renderer(hwf, K, chunk, render_kwargs_train)
 
-        estimator = Estimator(N_iter, 256, 'interest_regions', renderer, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.0, amount=0., delta_brightness=0.)
+        estimator = Estimator(N_iter, 512, 'interest_regions', renderer, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.01, amount=0.8, delta_brightness=0.)
 
         agent = Agent(P0, scene_dir, hwf, agent_type=None)
 
         true_pose, gt_img, gt_depth = agent.step(P0.cpu().detach().numpy()) 
 
+        #state = torch.rand(12, requires_grad=False)
+
+        #action = torch.rand(4, requires_grad=True)
+
+        #next_state = agent.torch_dynamics(state, torch.rand(4))
+
+        #J = torch.autograd.functional.jacobian(lambda x: agent.torch_dynamics(x, torch.rand(4)), state)
+
+        #t1 = time.time()
+        #J = torch.autograd.functional.jacobian(lambda x: agent.torch_dynamics(state, x), action)
+        #t2 = time.time()
+        #print(J)
+
         #Using NeRF image as ground truth for debugging
         #gt_img_nerf, depth_img_nerf = renderer.get_img_from_pose(torch.tensor(true_pose), NeedDepth=True)
 
-        plt.figure()
-        plt.imshow(gt_img)
-        plt.show()
+        #plt.figure()
+        #plt.imshow(gt_img)
+        #plt.show()
 
 
         #fig, axs = plt.subplots(4)
