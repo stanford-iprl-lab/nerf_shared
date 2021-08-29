@@ -243,24 +243,34 @@ class System:
 
 def main():
     #PARAM nerf config
-    nerf = get_nerf('configs/playground.txt')
 
     #PARAM start and end positions for the planner. [x,y,z,yaw]
-    # under
+
+    # nerf = get_nerf('configs/playground.txt')
+    # playgroud - under
     # start_state = torch.tensor([0, -0.8, 0.01, 0])
     # end_state   = torch.tensor([0,  0.9, 0.6 , 0])
     
-    # upper
+    # playgroud - upper
     # start_state = torch.tensor([-0.11, -0.7, 0.7, 0])
     # end_state   = torch.tensor([-0.11, 0.45, 0.7, 0])
 
-    # diag
-    start_state = torch.tensor([ 0.25, -0.47, 0.01, 0])
-    end_state   = torch.tensor([-0.25,  0.6,  0.6 , 0])
+    # playground - diag
+    # start_state = torch.tensor([ 0.25, -0.47, 0.01, 0])
+    # end_state   = torch.tensor([-0.25,  0.6,  0.6 , 0])
 
-    # middle
+    # playground - middle
     # start_state = torch.tensor([ 0.5, 0.2, 0.3, 0])
     # end_state   = torch.tensor([-0.3,   0, 0.5 , 0])
+
+    nerf = get_nerf('configs/violin.txt')
+    # violin - simple
+    start_state = torch.tensor([-0.3 ,-0.5, 0.1, 0])
+    end_state   = torch.tensor([-0.35, 0.7, 0.15 , 0])
+
+    # violin - dodge
+    # start_state = torch.tensor([-0.35,-0.5, 0.05, 0])
+    # end_state   = torch.tensor([ 0.1,  0.6, 0.3 , 0])
 
     #PARAM initial and final velocities
     start_vel = torch.tensor([0, 0, 0, 0])
@@ -269,6 +279,7 @@ def main():
     #PARAM
     steps = 20
     dt = 0.1
+    # dt = 0.05 # why doesn't this work?
 
     traj = System(nerf, start_state, end_state, start_vel, end_vel, steps, dt)
 
