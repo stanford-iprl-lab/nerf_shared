@@ -18,14 +18,23 @@ patch_typeguard()
 from load_nerf import get_nerf
 
 # # hard coded "nerf" for testing. see below to import real nerf
-# def get_nerf(*args, **kwargs):
-#     @typechecked
-#     def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
-#         x = points[..., 0]
-#         y = points[..., 1] - 1
+def get_manual_nerf(name):
+    if name =='empty':
+        @typechecked
+        def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
+            return torch.zeros_like( points[...,0] )
+        return nerf
 
-#         return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
-#     return nerf
+    if name =='cylinder':
+        @typechecked
+        def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
+            x = points[..., 0]
+            y = points[..., 1] - 1
+
+            return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
+        return nerf
+
+    raise ValueError
 
 
 def plot_nerf(ax_map, nerf):
@@ -189,25 +198,22 @@ class System:
     def learn_update(self):
         opt = torch.optim.Adam(self.params(), lr=self.lr)
 
-        try:
-            for it in range(self.update_epochs):
-                opt.zero_grad()
-                self.epoch = it
-                loss = self.total_cost()
-                print(it, loss)
-                loss.backward()
-                opt.step()
+        for it in range(self.update_epochs):
+            opt.zero_grad()
+            self.epoch = it
+            loss = self.total_cost()
+            print(it, loss)
+            loss.backward()
+            opt.step()
 
-                save_step = 50
-                if it%save_step == 0:
-                    self.save_poses("paths/"+str(it//save_step)+"_testing.json")
-
-        except KeyboardInterrupt:
-            print("finishing early")
+            # save_step = 50
+            # if it%save_step == 0:
+        self.save_poses("paths/"+str(it//save_step)+"_testing.json")
 
     def update_state(self, measured_state: TensorType["state_dim"]):
-        pass
-
+        measured_state = measured_state[None, :]
+        self.start_states = torch.cat( [self.start_states, measured_state], dim=0] )
+        self.states = self.states[1:, :].clone()
 
     def plot(self, fig = None):
         if fig == None:
@@ -329,21 +335,38 @@ def main():
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
-    #PARAM
 
+    nerf = get_manual_nerf("empty")
+
+    #PARAM
     cfg = {"T_final": 2,
             "steps": 20,
             "lr": 0.001,
-            "epochs_init": 2000,
-            "fade_out_epoch": 1000,
+            "epochs_init": 500, #2000,
+            "fade_out_epoch": 0,#1000,
             "fade_out_sharpness": 10,
             "epochs_update": 100,
             }
 
     traj = System(nerf, start_state, end_state, start_vel, end_vel, cfg)
-
     traj.learn_init()
+    traj.plot()
 
+    if True:
+        for step in range(cfg['steps']):
+            # # idealy something like this but we jank it for now
+            # action = traj.get_actions()[0 or 1, :]
+            # current_state = next_state(action)
+
+            current_state = traj.states[0 :].detach()
+            randomness = torch.rand(4) * torch.tensor([0.05, 0.05, 0.05, 0.1])
+
+            measured_state = current_state + randomness
+            traj.update_state( measured_state )
+            traj.learn_update()
+            # traj.save_poses(???)
+            traj.plot()
+            print("sim step", step)
 
     #PARAM file to save the trajectory
     traj.save_poses("paths/playground_testing.json")
