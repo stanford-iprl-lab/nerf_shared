@@ -267,8 +267,12 @@ class System:
         # PLOTS BODY POINTS
         # S, P, 2
         body_points = self.body_to_world( self.robot_body ).detach().numpy()
-        for state_body in body_points:
-            ax.plot( *state_body.T, "g.", ms=72./ax.figure.dpi, alpha = 0.5)
+        for i, state_body in enumerate(body_points):
+            if i < self.start_states.shape[0]:
+                color = 'r.'
+            else:
+                color = 'g.'
+            ax.plot( *state_body.T, color, ms=72./ax.figure.dpi, alpha = 0.5)
 
         # PLOTS AXIS
         # create point for origin, plus a right-handed coordinate indicator.
@@ -346,11 +350,11 @@ def main():
     #PARAM
     cfg = {"T_final": 2,
             "steps": 20,
-            "lr": 0.001,
+            "lr": 0.001,#0.001,
             "epochs_init": 500, #2000,
             "fade_out_epoch": 0,#1000,
             "fade_out_sharpness": 10,
-            "epochs_update": 100,
+            "epochs_update": 500,
             }
 
     traj = System(nerf, start_state, end_state, start_vel, end_vel, cfg)
@@ -364,7 +368,7 @@ def main():
             # current_state = next_state(action)
 
             current_state = traj.states[0, :].detach()
-            randomness = torch.rand(4) * torch.tensor([0.05, 0.05, 0.05, 0.1])
+            randomness = torch.rand(4) * torch.tensor([0.02, 0.02, 0.02, 0.1])
 
             measured_state = current_state + randomness
             traj.update_state( measured_state )
