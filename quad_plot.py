@@ -367,8 +367,9 @@ def main():
             # action = traj.get_actions()[0 or 1, :]
             # current_state = next_state(action)
 
+            # we jank it
             current_state = traj.states[0, :].detach()
-            randomness = torch.rand(4) * torch.tensor([0.02, 0.02, 0.02, 0.1])
+            randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
 
             measured_state = current_state + randomness
             traj.update_state( measured_state )
