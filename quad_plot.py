@@ -34,15 +34,26 @@ def plot_nerf(ax_map, nerf):
 
 
 class System:
-    def __init__(self, nerf, start_state, end_state, start_vel, end_vel, steps, dt):
+    def __init__(self, nerf, start_state, end_state,
+                        start_vel, end_vel, 
+                        cfg):
         self.nerf = nerf
-        self.dt = dt
+
+        self.T_final            = cfg['T_final']
+        self.steps              = cfg['steps']
+        self.lr                 = cfg['lr']
+        self.epochs_init        = cfg['epochs_init']
+        self.epochs_update      = cfg['epochs_update']
+        self.fade_out_epoch     = cfg['fade_out_epoch']
+        self.fade_out_sharpness = cfg['fade_out_sharpness']
+
+        self.dt = self.T_final / self.steps
 
         # create initial and final 3 states to constrain: position, velocity and possibly angle in the future
         self.start_states = start_state[None,:] + torch.tensor([-1,0,1])[:,None] * self.dt * start_vel
         self.end_states   = end_state[None,:]   + torch.tensor([-1,0,1])[:,None] * self.dt * end_vel  
 
-        slider = torch.linspace(0, 1, steps)[1:-1, None]
+        slider = torch.linspace(0, 1, self.steps)[1:-1, None]
 
         states = (1-slider) * self.start_states[-1,:] + slider * self.end_states[0,:]
         self.states = states.clone().detach().requires_grad_(True)
@@ -143,13 +154,10 @@ class System:
         colision_prob = torch.mean( density, dim = -1) * distance
         colision_prob = colision_prob[1:]
 
-
-        fade_out_epoch = 1000
-        sharpness = 10
-        if self.epoch < fade_out_epoch:
+        if self.epoch < self.fade_out_epoch:
             t = torch.linspace(0,1, colision_prob.shape[0])
-            position = self.epoch/fade_out_epoch
-            mask = torch.sigmoid(sharpness * (position - t))
+            position = self.epoch/self.fade_out_epoch
+            mask = torch.sigmoid(self.fade_out_sharpness * (position - t))
             colision_prob = colision_prob * mask
 
         #PARAM cost function shaping
@@ -158,6 +166,47 @@ class System:
     def total_cost(self):
         total_cost, colision_loss = self.get_cost()
         return torch.mean(total_cost)
+
+    def learn_init(self):
+        opt = torch.optim.Adam(self.params(), lr=self.lr)
+
+        try:
+            for it in range(self.epochs_init):
+                opt.zero_grad()
+                self.epoch = it
+                loss = self.total_cost()
+                print(it, loss)
+                loss.backward()
+                opt.step()
+
+                save_step = 50
+                if it%save_step == 0:
+                    self.save_poses("paths/"+str(it//save_step)+"_testing.json")
+
+        except KeyboardInterrupt:
+            print("finishing early")
+
+    def learn_update(self):
+        opt = torch.optim.Adam(self.params(), lr=self.lr)
+
+        try:
+            for it in range(self.update_epochs):
+                opt.zero_grad()
+                self.epoch = it
+                loss = self.total_cost()
+                print(it, loss)
+                loss.backward()
+                opt.step()
+
+                save_step = 50
+                if it%save_step == 0:
+                    self.save_poses("paths/"+str(it//save_step)+"_testing.json")
+
+        except KeyboardInterrupt:
+            print("finishing early")
+
+    def update_state(self, measured_state: TensorType["state_dim"]):
+        pass
 
 
     def plot(self, fig = None):
@@ -265,42 +314,36 @@ def main():
 
     nerf = get_nerf('configs/violin.txt')
     # violin - simple
-    start_state = torch.tensor([-0.3 ,-0.5, 0.1, 0])
-    end_state   = torch.tensor([-0.35, 0.7, 0.15 , 0])
+    # start_state = torch.tensor([-0.3 ,-0.5, 0.1, 0])
+    # end_state   = torch.tensor([-0.35, 0.7, 0.15 , 0])
 
     # violin - dodge
     # start_state = torch.tensor([-0.35,-0.5, 0.05, 0])
     # end_state   = torch.tensor([ 0.1,  0.6, 0.3 , 0])
+
+    # violin - middle
+    start_state = torch.tensor([0,-0.5, 0.1, 0])
+    end_state   = torch.tensor([0, 0.7, 0.15 , 0])
 
     #PARAM initial and final velocities
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
     #PARAM
-    steps = 20
-    dt = 0.1
-    # dt = 0.05 # why doesn't this work?
 
-    traj = System(nerf, start_state, end_state, start_vel, end_vel, steps, dt)
+    cfg = {"T_final": 2,
+            "steps": 20,
+            "lr": 0.001,
+            "epochs_init": 2000,
+            "fade_out_epoch": 1000,
+            "fade_out_sharpness": 10,
+            "epochs_update": 100,
+            }
 
-    #PARAM learning rate for the path optimization
-    opt = torch.optim.Adam(traj.params(), lr=0.001)
+    traj = System(nerf, start_state, end_state, start_vel, end_vel, cfg)
 
-    try:
-        for it in range(2500):
-            opt.zero_grad()
-            traj.epoch = it
-            loss = traj.total_cost()
-            print(it, loss)
-            loss.backward()
-            opt.step()
+    traj.learn_init()
 
-            save_step = 50
-            if it%save_step == 0:
-                traj.save_poses("paths/"+str(it//save_step)+"_testing.json")
-
-    except KeyboardInterrupt:
-        print("finishing early")
 
     #PARAM file to save the trajectory
     traj.save_poses("paths/playground_testing.json")
