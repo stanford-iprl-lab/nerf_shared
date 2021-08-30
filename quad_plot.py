@@ -14,8 +14,10 @@ from typeguard import typechecked
 
 patch_typeguard()
 
-
 from load_nerf import get_nerf
+
+torch.manual_seed(0)
+np.random.seed(0)
 
 # # hard coded "nerf" for testing. see below to import real nerf
 def get_manual_nerf(name):
@@ -198,7 +200,7 @@ class System:
     def learn_update(self):
         opt = torch.optim.Adam(self.params(), lr=self.lr)
 
-        for it in range(self.update_epochs):
+        for it in range(self.epochs_update):
             opt.zero_grad()
             self.epoch = it
             loss = self.total_cost()
@@ -208,12 +210,15 @@ class System:
 
             # save_step = 50
             # if it%save_step == 0:
-        self.save_poses("paths/"+str(it//save_step)+"_testing.json")
+        # self.save_poses("paths/"+str(it//save_step)+"_testing.json")
 
+    @typechecked
     def update_state(self, measured_state: TensorType["state_dim"]):
         measured_state = measured_state[None, :]
-        self.start_states = torch.cat( [self.start_states, measured_state], dim=0] )
-        self.states = self.states[1:, :].clone()
+        print(self.start_states.shape)
+        print(measured_state.shape)
+        self.start_states = torch.cat( [self.start_states, measured_state], dim=0 )
+        self.states = self.states[1:, :].detach().requires_grad_(True)
 
     def plot(self, fig = None):
         if fig == None:
@@ -358,7 +363,7 @@ def main():
             # action = traj.get_actions()[0 or 1, :]
             # current_state = next_state(action)
 
-            current_state = traj.states[0 :].detach()
+            current_state = traj.states[0, :].detach()
             randomness = torch.rand(4) * torch.tensor([0.05, 0.05, 0.05, 0.1])
 
             measured_state = current_state + randomness
