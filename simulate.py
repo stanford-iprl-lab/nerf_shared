@@ -99,11 +99,35 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         ####################################### DEBUGING ENVIRONMENT ####################################################3
         renderer = Renderer(hwf, K, chunk, render_kwargs_train)
 
-        estimator = Estimator(N_iter, 512, 'interest_regions', renderer, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.01, amount=0.8, delta_brightness=0.)
-
         agent = Agent(P0, scene_dir, hwf, agent_type=None)
 
-        true_pose, gt_img, gt_depth = agent.step(P0.cpu().detach().numpy()) 
+        xt = torch.zeros((18, ))
+        xt[6:15] = (torch.eye(3)).reshape(-1)
+
+        action = .5*torch.ones((4,))
+
+        sig = 1e-2 * torch.eye(xt.shape[0])
+
+        Q = 1e-2 * torch.eye(xt.shape[0])
+
+        estimator = Estimator(N_iter, 512, 'interest_regions', renderer, agent, xt, sig, Q, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.01, amount=0.8, delta_brightness=0.)
+
+        true_state = xt
+
+        for traj_iter in range(5):
+
+            true_pose, true_state, gt_img, gt_depth = agent.step(true_state, action) 
+
+            #plt.figure()
+            #plt.imshow(gt_img)
+            #plt.show()
+            #plt.close()
+
+            state_est = estimator.estimate_state(gt_img, true_pose, gt_depth, action)
+
+            true_state = torch.tensor(true_state)
+
+            print('True state', true_state, 'State estimate', state_est)
 
         #state = torch.rand(12, requires_grad=False)
 
@@ -133,7 +157,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         #axs[3].imshow(vut.depth_to_rgb(depth_img_nerf.cpu().detach().numpy()))
         #plt.show()
 
-        pose_estimate = estimator.estimate_pose(P0, gt_img[..., :3], true_pose, gt_depth)
+        #pose_estimate = estimator.estimate_pose(P0, gt_img[..., :3], true_pose, gt_depth)
 
         #print(pose_estimate, true_pose, P0)     
     
