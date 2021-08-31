@@ -337,22 +337,39 @@ def main():
     # end_state   = torch.tensor([ 0.1,  0.6, 0.3 , 0])
 
     # violin - middle
-    start_state = torch.tensor([0,-0.5, 0.1, 0])
-    end_state   = torch.tensor([0, 0.7, 0.15 , 0])
+    # start_state = torch.tensor([0,-0.5, 0.1, 0])
+    # end_state   = torch.tensor([0, 0.7, 0.15 , 0])
 
     #PARAM initial and final velocities
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
+    nerf = get_nerf('configs/stonehenge.txt')
+    # stonehenge - simple
+    start_state = torch.tensor([-0.05,-0.9, 0.2, 0])
+    end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
 
-    nerf = get_manual_nerf("empty")
+    # stonehenge - tricky
+    # start_state = torch.tensor([ 0.4 ,-0.9, 0.2, 0])
+    # end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
+
+    # nerf = get_manual_nerf("empty")
 
     #PARAM
+    # cfg = {"T_final": 2,
+    #         "steps": 20,
+    #         "lr": 0.001,#0.001,
+    #         "epochs_init": 500, #2000,
+    #         "fade_out_epoch": 0,#1000,
+    #         "fade_out_sharpness": 10,
+    #         "epochs_update": 500,
+    #         }
+
     cfg = {"T_final": 2,
-            "steps": 20,
-            "lr": 0.001,#0.001,
-            "epochs_init": 500, #2000,
-            "fade_out_epoch": 0,#1000,
+            "steps": 30,
+            "lr": 0.001,
+            "epochs_init": 2000,
+            "fade_out_epoch": 400,
             "fade_out_sharpness": 10,
             "epochs_update": 500,
             }
@@ -361,7 +378,7 @@ def main():
     traj.learn_init()
     traj.plot()
 
-    if True:
+    if False:
         for step in range(cfg['steps']):
             # # idealy something like this but we jank it for now
             # action = traj.get_actions()[0 or 1, :]
@@ -379,8 +396,8 @@ def main():
             print("sim step", step)
 
     #PARAM file to save the trajectory
-    traj.save_poses("paths/playground_testing.json")
-    traj.plot()
+    # traj.save_poses("paths/playground_testing.json")
+    # traj.plot()
 
 @typechecked
 def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":..., 3]:

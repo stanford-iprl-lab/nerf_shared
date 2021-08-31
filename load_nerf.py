@@ -160,9 +160,11 @@ def get_nerf(config = 'configs/playground.txt'):
 
 def main():
     # nerf = get_nerf('configs/playground.txt')
-    nerf = get_nerf("configs/violin.txt")
+    # nerf = get_nerf("configs/violin.txt")
+    # nerf = get_nerf("configs/stonehenge.txt")
+    nerf = get_nerf("configs/church.txt")
 
-    side = 20
+    side = 100
     linspace = torch.linspace(-1,1, side)
 
     # side, side, side, 3
@@ -170,9 +172,9 @@ def main():
                 
     output = nerf(coods)
 
-    into_page_dim, x_dim, y_dim  = 0,  1, 2
+    # into_page_dim, x_dim, y_dim  = 0,  1, 2
     # into_page_dim, x_dim, y_dim  = 1,  0, 2
-    # into_page_dim, x_dim, y_dim  = 2,  0, 1
+    into_page_dim, x_dim, y_dim  = 2,  0, 1
 
     # im,_ = torch.max( output, dim=into_page_dim)
     im = torch.mean( output, dim=into_page_dim)
