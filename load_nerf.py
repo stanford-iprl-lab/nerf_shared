@@ -14,6 +14,7 @@ from typeguard import typechecked
 
 patch_typeguard()
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def config_parser():
 

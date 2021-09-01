@@ -16,6 +16,7 @@ patch_typeguard()
 
 from load_nerf import get_nerf
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(0)
 np.random.seed(0)
 
@@ -345,7 +346,7 @@ def main():
     end_vel   = torch.tensor([0, 0, 0, 0])
 
 
-    nerf = get_manual_nerf("empty")
+    #nerf = get_manual_nerf("empty")
 
     #PARAM
     cfg = {"T_final": 2,
