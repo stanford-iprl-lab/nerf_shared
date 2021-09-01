@@ -141,6 +141,27 @@ class System:
         rot_matrix = torch.stack( [x_axis_body, y_axis_body, z_axis_body], dim=-1)
         return rot_matrix, z_accel
 
+    def get_next_action(self) -> TensorType[1,"state_dim"]:
+        actions = self.get_actions()
+        # fz, tx, ty, tz
+        return actions[0, None, :]
+
+    def get_full_state(self):
+        rot_matrix, z_accel = self.get_rots_and_accel()
+
+        g = torch.tensor([0,0,-10])
+
+        states = self.get_states()
+        prev_state = states[:-1, :]
+        next_state = states[1:, :]
+
+        diff = (next_state - prev_state)/self.dt
+        vel = diff[..., :3]
+
+        # pos, vel, rotation matrix
+        return states[:, :3], vel, rot_matrix
+
+
     @typechecked
     def body_to_world(self, points: TensorType["batch", 3]) -> TensorType["states", "batch", 3]:
         states = self.get_states()
