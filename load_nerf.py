@@ -140,40 +140,25 @@ def get_nerf(config = 'configs/playground.txt'):
     K = None
     renderer = Renderer(hwf, K, chunk, render_kwargs_train)
 
-    @typechecked
-    def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
-        out_shape = points.shape[:-1]
-        points = points.reshape(1, -1, 3)
-
-        # +z in nerf is -y in blender
-        # +y in nerf is +z in blender
-        # +x in nerf is +x in blender
-        mapping = torch.tensor([[1, 0, 0],
-                                [0, 0, 1],
-                                [0,-1, 0]], dtype=torch.float)
-
-        points = points @ mapping.T
-
-        output = renderer.get_density_from_pt(points)
-        return output.reshape(*out_shape)
-
-    return nerf
+    return renderer
 
 def main():
     # nerf = get_nerf('configs/playground.txt')
-    nerf = get_nerf("configs/violin.txt")
+    # nerf = get_nerf("configs/violin.txt")
+    nerf = get_nerf("configs/stonehenge.txt")
+    # nerf = get_nerf("configs/church.txt")
 
-    side = 20
+    side = 100
     linspace = torch.linspace(-1,1, side)
 
     # side, side, side, 3
     coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
                 
-    output = nerf(coods)
+    output = nerf.get_density(coods)
 
-    into_page_dim, x_dim, y_dim  = 0,  1, 2
+    # into_page_dim, x_dim, y_dim  = 0,  1, 2
     # into_page_dim, x_dim, y_dim  = 1,  0, 2
-    # into_page_dim, x_dim, y_dim  = 2,  0, 1
+    into_page_dim, x_dim, y_dim  = 2,  0, 1
 
     # im,_ = torch.max( output, dim=into_page_dim)
     im = torch.mean( output, dim=into_page_dim)
@@ -184,8 +169,8 @@ def main():
     print("happy")
     # exit()
 
-    # plt.pcolormesh(x_image, y_image, im)
-    plt.imshow(im)
+    plt.pcolormesh(x_image, y_image, im)
+    # plt.imshow(im)
     plt.show()
 
 

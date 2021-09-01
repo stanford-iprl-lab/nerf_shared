@@ -23,19 +23,21 @@ np.random.seed(0)
 # # hard coded "nerf" for testing. see below to import real nerf
 def get_manual_nerf(name):
     if name =='empty':
-        @typechecked
-        def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
-            return torch.zeros_like( points[...,0] )
-        return nerf
+        class FakeRenderer:
+            @typechecked
+            def get_density(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
+                return torch.zeros_like( points[...,0] )
+        return FakeRenderer()
 
     if name =='cylinder':
-        @typechecked
-        def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
-            x = points[..., 0]
-            y = points[..., 1] - 1
+        class FakeRenderer:
+            @typechecked
+            def get_density(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
+                x = points[..., 0]
+                y = points[..., 1] - 1
 
-            return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
-        return nerf
+                return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
+        return FakeRenderer()
 
     raise ValueError
 
@@ -46,10 +48,10 @@ def plot_nerf(ax_map, nerf):
 
 
 class System:
-    def __init__(self, nerf, start_state, end_state,
+    def __init__(self, renderer, start_state, end_state,
                         start_vel, end_vel, 
                         cfg):
-        self.nerf = nerf
+        self.nerf = renderer.get_density
 
         self.T_final            = cfg['T_final']
         self.steps              = cfg['steps']
@@ -87,6 +89,7 @@ class System:
 
     def get_actions(self):
         mass = 1
+        J = torch.eye(3)
 
         rot_matrix, z_accel = self.get_rots_and_accel()
 
@@ -101,7 +104,6 @@ class System:
         #calculate angular acceleration
         angular_accel = (ang_vel[1:,...] - ang_vel[:-1,...])/self.dt
 
-        J = torch.eye(3)
         # S, 3    3,3      S, 3, 1
         torques = (J @ angular_accel[...,None])[...,0]
 
@@ -139,6 +141,27 @@ class System:
         # S, 3, 3 # assembled manually from basis vectors
         rot_matrix = torch.stack( [x_axis_body, y_axis_body, z_axis_body], dim=-1)
         return rot_matrix, z_accel
+
+    def get_next_action(self) -> TensorType[1,"state_dim"]:
+        actions = self.get_actions()
+        # fz, tx, ty, tz
+        return actions[0, None, :]
+
+    def get_full_state(self):
+        rot_matrix, z_accel = self.get_rots_and_accel()
+
+        g = torch.tensor([0,0,-10])
+
+        states = self.get_states()
+        prev_state = states[:-1, :]
+        next_state = states[1:, :]
+
+        diff = (next_state - prev_state)/self.dt
+        vel = diff[..., :3]
+
+        # pos, vel, rotation matrix
+        return states[:, :3], vel, rot_matrix
+
 
     @typechecked
     def body_to_world(self, points: TensorType["batch", 3]) -> TensorType["states", "batch", 3]:
@@ -311,7 +334,7 @@ def main():
 
     #PARAM start and end positions for the planner. [x,y,z,yaw]
 
-    # nerf = get_nerf('configs/playground.txt')
+    # renderer = get_nerf('configs/playground.txt')
     # playgroud - under
     # start_state = torch.tensor([0, -0.8, 0.01, 0])
     # end_state   = torch.tensor([0,  0.9, 0.6 , 0])
@@ -328,7 +351,7 @@ def main():
     # start_state = torch.tensor([ 0.5, 0.2, 0.3, 0])
     # end_state   = torch.tensor([-0.3,   0, 0.5 , 0])
 
-    nerf = get_nerf('configs/violin.txt')
+    renderer = get_nerf('configs/violin.txt')
     # violin - simple
     # start_state = torch.tensor([-0.3 ,-0.5, 0.1, 0])
     # end_state   = torch.tensor([-0.35, 0.7, 0.15 , 0])
@@ -338,31 +361,52 @@ def main():
     # end_state   = torch.tensor([ 0.1,  0.6, 0.3 , 0])
 
     # violin - middle
-    start_state = torch.tensor([0,-0.5, 0.1, 0])
-    end_state   = torch.tensor([0, 0.7, 0.15 , 0])
+    # start_state = torch.tensor([0,-0.5, 0.1, 0])
+    # end_state   = torch.tensor([0, 0.7, 0.15 , 0])
 
     #PARAM initial and final velocities
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
+    renderer = get_nerf('configs/stonehenge.txt')
+    # stonehenge - simple
+    start_state = torch.tensor([-0.05,-0.9, 0.2, 0])
+    end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
+
+    # stonehenge - tricky
+    # start_state = torch.tensor([ 0.4 ,-0.9, 0.2, 0])
+    # end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
+
+    # stonehenge - very simple
+    # start_state = torch.tensor([-0.43, -0.75, 0.2, 0])
+    # end_state = torch.tensor([-0.26, 0.48, 0.15, 0])
 
     #nerf = get_manual_nerf("empty")
 
     #PARAM
+    # cfg = {"T_final": 2,
+    #         "steps": 20,
+    #         "lr": 0.001,#0.001,
+    #         "epochs_init": 500, #2000,
+    #         "fade_out_epoch": 0,#1000,
+    #         "fade_out_sharpness": 10,
+    #         "epochs_update": 500,
+    #         }
+
     cfg = {"T_final": 2,
             "steps": 20,
-            "lr": 0.001,#0.001,
-            "epochs_init": 500, #2000,
-            "fade_out_epoch": 0,#1000,
+            "lr": 0.001,
+            "epochs_init": 2500,
+            "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
             "epochs_update": 500,
             }
 
-    traj = System(nerf, start_state, end_state, start_vel, end_vel, cfg)
+    traj = System(renderer, start_state, end_state, start_vel, end_vel, cfg)
     traj.learn_init()
     traj.plot()
 
-    if True:
+    if False:
         for step in range(cfg['steps']):
             # # idealy something like this but we jank it for now
             # action = traj.get_actions()[0 or 1, :]
@@ -380,8 +424,8 @@ def main():
             print("sim step", step)
 
     #PARAM file to save the trajectory
-    traj.save_poses("paths/playground_testing.json")
-    traj.plot()
+    # traj.save_poses("paths/playground_testing.json")
+    # traj.plot()
 
 @typechecked
 def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":..., 3]:

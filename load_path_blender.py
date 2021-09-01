@@ -56,3 +56,15 @@ while True:
             
     bpy.context.view_layer.update() 
     save += 1
+
+def get_endpoints():
+    s_loc = [round(x,2) for x in bpy.data.objects['Start'].location]
+    bpy.data.objects['Start'].location = Vector(s_loc)
+    e_loc = [round(x,2) for x in bpy.data.objects['End'].location]
+    bpy.data.objects['End'].location = Vector(e_loc)
+    s = ""
+    s += 'start_state = torch.tensor(' + str( s_loc + [0] ) +")"
+    s += "\n"
+    s += 'end_state = torch.tensor(' + str( e_loc + [0] ) +")"
+    s += "\n"
+    return s
