@@ -176,8 +176,9 @@ class System:
     def get_cost(self):
         actions = self.get_actions()
 
-        fz = actions[:, 0]
+        fz = actions[:, 0].to(device)
         torques = torch.norm(actions[:, 1:], dim=-1)**2
+        torques = torques.to(device)
 
         states = self.get_states()
         prev_state = states[:-1, :]
@@ -186,11 +187,12 @@ class System:
         # multiplied by distance to prevent it from just speed tunnelling
         distance = torch.sum( (next_state - prev_state)[...,:3]**2 + 1e-5, dim = -1)**0.5
         density = self.nerf( self.body_to_world(self.robot_body)[1:,...] )**2
+        distance = distance.to(device)
         colision_prob = torch.mean( density, dim = -1) * distance
         colision_prob = colision_prob[1:]
 
         if self.epoch < self.fade_out_epoch:
-            t = torch.linspace(0,1, colision_prob.shape[0])
+            t = torch.linspace(0,1, colision_prob.shape[0]).to(device)
             position = self.epoch/self.fade_out_epoch
             mask = torch.sigmoid(self.fade_out_sharpness * (position - t))
             colision_prob = colision_prob * mask
@@ -272,8 +274,8 @@ class System:
         ax_right = ax.twinx()
 
         total_cost, colision_loss = self.get_cost()
-        ax_right.plot(total_cost.detach().numpy(), 'black', label="cost")
-        ax_right.plot(colision_loss.detach().numpy(), 'cyan', label="colision")
+        ax_right.plot(total_cost.cpu().detach().numpy(), 'black', label="cost")
+        ax_right.plot(colision_loss.cpu().detach().numpy(), 'cyan', label="colision")
         ax.legend()
 
     def plot_map(self, ax):

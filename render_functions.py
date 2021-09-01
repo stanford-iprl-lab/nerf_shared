@@ -73,5 +73,7 @@ class Renderer():
 
         points = points @ mapping.T
 
+        points = points.to(device)
+
         output = self.get_density_from_pt(points)
         return output.reshape(*out_shape)
