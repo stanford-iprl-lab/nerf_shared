@@ -86,6 +86,7 @@ class System:
 
     def get_actions(self):
         mass = 1
+        J = torch.eye(3)
 
         rot_matrix, z_accel = self.get_rots_and_accel()
 
@@ -100,7 +101,6 @@ class System:
         #calculate angular acceleration
         angular_accel = (ang_vel[1:,...] - ang_vel[:-1,...])/self.dt
 
-        J = torch.eye(3)
         # S, 3    3,3      S, 3, 1
         torques = (J @ angular_accel[...,None])[...,0]
 
@@ -353,6 +353,10 @@ def main():
     # start_state = torch.tensor([ 0.4 ,-0.9, 0.2, 0])
     # end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
 
+    # stonehenge - very simple
+    # start_state = torch.tensor([-0.43, -0.75, 0.2, 0])
+    # end_state = torch.tensor([-0.26, 0.48, 0.15, 0])
+
     # nerf = get_manual_nerf("empty")
 
     #PARAM
@@ -366,10 +370,10 @@ def main():
     #         }
 
     cfg = {"T_final": 2,
-            "steps": 30,
+            "steps": 20,
             "lr": 0.001,
-            "epochs_init": 2000,
-            "fade_out_epoch": 400,
+            "epochs_init": 2500,
+            "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
             "epochs_update": 500,
             }

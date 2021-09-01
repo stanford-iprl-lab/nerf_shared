@@ -161,8 +161,8 @@ def get_nerf(config = 'configs/playground.txt'):
 def main():
     # nerf = get_nerf('configs/playground.txt')
     # nerf = get_nerf("configs/violin.txt")
-    # nerf = get_nerf("configs/stonehenge.txt")
-    nerf = get_nerf("configs/church.txt")
+    nerf = get_nerf("configs/stonehenge.txt")
+    # nerf = get_nerf("configs/church.txt")
 
     side = 100
     linspace = torch.linspace(-1,1, side)
@@ -185,8 +185,8 @@ def main():
     print("happy")
     # exit()
 
-    # plt.pcolormesh(x_image, y_image, im)
-    plt.imshow(im)
+    plt.pcolormesh(x_image, y_image, im)
+    # plt.imshow(im)
     plt.show()
 
 
