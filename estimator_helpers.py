@@ -35,11 +35,11 @@ def find_POI(img_rgb, DEBUG=False): # img - RGB image in range 0...255
     xy = np.array([list(point) for point in xy_set]).astype(int)
     return xy # pixel coordinates
 
-img2mse = lambda x, y : 1e-2 * torch.mean((x - y) ** 2)
+img2mse = lambda x, y : torch.mean((x - y) ** 2)
 
-depth2mse = lambda x, y, z : 1e-2 * torch.mean(((x - y) ** 2))
+depth2mse = lambda x, y, z : torch.mean(((x - y) ** 2))
 
-quad_loss = lambda x, y, M: ((x - y).reshape((1, -1)) @ torch.inverse(M) @ (x - y).reshape((-1, 1)))
+quad_loss = lambda x, y, M: torch.mean(((x - y).reshape((1, -1)) @ torch.inverse(M) @ (x - y).reshape((-1, 1))))
 
 rot_psi = lambda phi: np.array([
         [1, 0, 0, 0],
@@ -512,9 +512,9 @@ class Estimator():
         for k in range(self.iter):
 
             # Create pose transformation model
-            #start_state = torch.Tensor(start_state).to(device)
-            #state_trans = state_transform().to(device)
-            #optimizer = torch.optim.Adam(params=state_trans.parameters(), lr=self.lrate, betas=(0.9, 0.999))
+            start_state = torch.Tensor(start_state).to(device)
+            state_trans = state_transform().to(device)
+            optimizer = torch.optim.Adam(params=state_trans.parameters(), lr=self.lrate, betas=(0.9, 0.999))
 
             if k % N == 0:
 
@@ -623,8 +623,8 @@ class Estimator():
 
             loss_store.append(loss.cpu().detach().numpy())
 
-            #start_state = state_trans(start_state)
-            #start_state = start_state.cpu().detach().numpy()
+            start_state = state_trans(start_state)
+            start_state = start_state.cpu().detach().numpy()
 
             #if k > 0:
             #    if loss_store[k] > loss_store[k-1]:
@@ -660,14 +660,14 @@ class Estimator():
                     print('Translation error: ', translation_error)
                     print('-----------------------------------')
 
-                    '''
+                    
                     if (k+1) % 300 == 0:
                         img_dummy = self.renderer.get_img_from_pose(pose)
                         plt.figure()
                         plt.imshow(img_dummy.cpu().detach().numpy())
                         plt.show()
                         plt.close()
-                    '''
+                    
                     
 
         return predict_state

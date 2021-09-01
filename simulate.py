@@ -106,9 +106,9 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
 
         action = .5*torch.ones((4,))
 
-        sig = 1e-2 * torch.eye(xt.shape[0])
+        sig = 1e-4 * torch.eye(xt.shape[0])
 
-        Q = 1e-2 * torch.eye(xt.shape[0])
+        Q = 1e-4 * torch.eye(xt.shape[0])
 
         estimator = Estimator(N_iter, 512, 'interest_regions', renderer, agent, xt, sig, Q, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.01, amount=0.8, delta_brightness=0.)
 

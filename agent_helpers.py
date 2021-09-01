@@ -153,7 +153,7 @@ class Agent():
             print('System not identified')
         '''
 
-        new_state = self.drone_dynamics(state, action + torch.normal(0., 10, size=(4,)))
+        new_state = self.drone_dynamics(state, action + torch.normal(0., 2, size=(4,)))
         new_state = new_state.cpu().detach().numpy()
 
         new_pose = np.zeros((4, 4))
