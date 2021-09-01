@@ -1,8 +1,10 @@
 import os
 from nerf_core import *
 
-from torchtyping import TensorDetail, TensorType
+from torchtyping import TensorDetail, TensorType, patch_typeguard
 from typeguard import typechecked
+
+patch_typeguard()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -57,3 +59,19 @@ class Renderer():
 
         return density.reshape(-1)
 
+    @typechecked
+    def get_density(self, points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
+        out_shape = points.shape[:-1]
+        points = points.reshape(1, -1, 3)
+
+        # +z in nerf is -y in blender
+        # +y in nerf is +z in blender
+        # +x in nerf is +x in blender
+        mapping = torch.tensor([[1, 0, 0],
+                                [0, 0, 1],
+                                [0,-1, 0]], dtype=torch.float)
+
+        points = points @ mapping.T
+
+        output = self.get_density_from_pt(points)
+        return output.reshape(*out_shape)

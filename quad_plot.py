@@ -22,19 +22,21 @@ np.random.seed(0)
 # # hard coded "nerf" for testing. see below to import real nerf
 def get_manual_nerf(name):
     if name =='empty':
-        @typechecked
-        def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
-            return torch.zeros_like( points[...,0] )
-        return nerf
+        class FakeRenderer:
+            @typechecked
+            def get_density(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
+                return torch.zeros_like( points[...,0] )
+        return FakeRenderer()
 
     if name =='cylinder':
-        @typechecked
-        def nerf(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
-            x = points[..., 0]
-            y = points[..., 1] - 1
+        class FakeRenderer:
+            @typechecked
+            def get_density(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
+                x = points[..., 0]
+                y = points[..., 1] - 1
 
-            return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
-        return nerf
+                return torch.sigmoid( (2 -(x**2 + y**2)) * 8 )
+        return FakeRenderer()
 
     raise ValueError
 
@@ -45,10 +47,10 @@ def plot_nerf(ax_map, nerf):
 
 
 class System:
-    def __init__(self, nerf, start_state, end_state,
+    def __init__(self, renderer, start_state, end_state,
                         start_vel, end_vel, 
                         cfg):
-        self.nerf = nerf
+        self.nerf = renderer.get_density
 
         self.T_final            = cfg['T_final']
         self.steps              = cfg['steps']
@@ -310,7 +312,7 @@ def main():
 
     #PARAM start and end positions for the planner. [x,y,z,yaw]
 
-    # nerf = get_nerf('configs/playground.txt')
+    # renderer = get_nerf('configs/playground.txt')
     # playgroud - under
     # start_state = torch.tensor([0, -0.8, 0.01, 0])
     # end_state   = torch.tensor([0,  0.9, 0.6 , 0])
@@ -327,7 +329,7 @@ def main():
     # start_state = torch.tensor([ 0.5, 0.2, 0.3, 0])
     # end_state   = torch.tensor([-0.3,   0, 0.5 , 0])
 
-    nerf = get_nerf('configs/violin.txt')
+    renderer = get_nerf('configs/violin.txt')
     # violin - simple
     # start_state = torch.tensor([-0.3 ,-0.5, 0.1, 0])
     # end_state   = torch.tensor([-0.35, 0.7, 0.15 , 0])
@@ -344,7 +346,7 @@ def main():
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
-    nerf = get_nerf('configs/stonehenge.txt')
+    renderer = get_nerf('configs/stonehenge.txt')
     # stonehenge - simple
     start_state = torch.tensor([-0.05,-0.9, 0.2, 0])
     end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
@@ -357,7 +359,7 @@ def main():
     # start_state = torch.tensor([-0.43, -0.75, 0.2, 0])
     # end_state = torch.tensor([-0.26, 0.48, 0.15, 0])
 
-    # nerf = get_manual_nerf("empty")
+    # renderer = get_manual_nerf("empty")
 
     #PARAM
     # cfg = {"T_final": 2,
@@ -378,7 +380,7 @@ def main():
             "epochs_update": 500,
             }
 
-    traj = System(nerf, start_state, end_state, start_vel, end_vel, cfg)
+    traj = System(renderer, start_state, end_state, start_vel, end_vel, cfg)
     traj.learn_init()
     traj.plot()
 
