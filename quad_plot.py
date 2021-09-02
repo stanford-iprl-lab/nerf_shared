@@ -80,6 +80,25 @@ class System:
 
         self.epoch = 0
 
+    def a_star_init(self):
+        side = 100
+        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
+
+        # side, side, side, 3
+        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+            
+        output = self.nerf(coods)
+        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
+        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
+        # 20, 20, 20
+
+        self.start_states[1, :3]
+        self.end_states[-2, :3]
+
+        path = astar(occupied, start, end)
+
+
+
     def params(self):
         return [self.states]
 
@@ -367,7 +386,7 @@ def main():
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
-    renderer = get_nerf('configs/stonehenge.txt')
+    # renderer = get_nerf('configs/stonehenge.txt')
     # stonehenge - simple
     start_state = torch.tensor([-0.05,-0.9, 0.2, 0])
     end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
@@ -380,7 +399,7 @@ def main():
     # start_state = torch.tensor([-0.43, -0.75, 0.2, 0])
     # end_state = torch.tensor([-0.26, 0.48, 0.15, 0])
 
-    # renderer = get_manual_nerf("empty")
+    renderer = get_manual_nerf("empty")
 
     #PARAM
     # cfg = {"T_final": 2,
@@ -468,6 +487,62 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
     rot_vec = (angle * vec)[...]
 
     return rot_vec
+
+def astar(occupied, start, goal):
+    def heuristic(a, b):
+        return np.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2)
+
+    def inbounds(point):
+        for x, size in zip(point, occupied.shape):
+            if x < 0 or x >= size: return False
+        return True
+
+    neighbors = [( 1,0,0),(-1, 0, 0),
+                 ( 0,1,0),( 0,-1, 0),
+                 ( 0,0,1),( 0, 0,-1)]
+
+    close_set = set()
+
+    came_from = {}
+    gscore = {start: 0}
+
+    open_heap = []
+    heapq.heappush(open_heap, (heuristic(start, goal), start))
+
+    while open_heap:
+        current = heapq.heappop(open_heap)[1]
+
+        if current == goal:
+            data = []
+            while current in came_from:
+                data.append(current)
+                current = came_from[current]
+            assert current == start
+            data.append(current)
+            return reversed(data)
+
+        close_set.add(current)
+
+        for i, j, k in neighbors:
+            neighbor = (current[0] + i, current[1] + j, current[2] + k)
+            if not inbounds( neighbor ):
+                continue
+
+            if occupied[neighbor]:
+                continue
+
+            tentative_g_score = gscore[current] + 1
+
+            if tentative_g_score < gscore.get(neighbor, float("inf")):
+                came_from[neighbor] = current
+                gscore[neighbor] = tentative_g_score
+
+                fscore = tentative_g_score + heuristic(neighbor, goal)
+                node = (fscore, neighbor)
+                if node not in open_heap:
+                    heapq.heappush(open_heap, node) 
+
+    raise ValueError("Failed to find path!")
 
 
 if __name__ == "__main__":
