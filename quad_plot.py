@@ -81,6 +81,7 @@ class System:
         self.epoch = 0
 
     def a_star_init(self):
+        #TODO WARNING
         side = 100
         linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
 
@@ -96,6 +97,7 @@ class System:
         self.end_states[-2, :3]
 
         path = astar(occupied, start, end)
+        #unfinished
 
 
 
