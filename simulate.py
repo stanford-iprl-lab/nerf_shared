@@ -21,6 +21,7 @@ from visual_helpers import visualize
 from estimator_helpers import Estimator
 from agent_helpers import Agent
 from quad_plot import System
+from quad_plot import get_manual_nerf
 
 DEBUG = False
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -127,7 +128,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         #Planner should initialize with A*
         #Arguments: Initial Pose P0, final pose PT, Number of Time Steps T, Discretization of A* N
 
-        traj = System(renderer, start_state, end_state, start_vel, end_vel, cfg)
+        traj = System(get_manual_nerf("empty"), start_state, end_state, start_vel, end_vel, cfg)
         traj.learn_init()
         traj.plot()
 
@@ -158,9 +159,13 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
 
             action = traj.get_next_action()
 
+            print('Action', action)
+
             #Step based on recommended action. Action should be array, not tensor! Output true_pose and gt_img are arrays.
             true_pose, true_state, gt_img = agent.step(action)
             true_states.append(true_state)
+
+            plt.imsave('paths/traj_image.png', gt_img)
 
             print('True state', true_state)
 
@@ -182,7 +187,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
             #Convert 4x4 pose matrix into [x,y,z, yaw] 
             measured_state = convert_pose_to_planner_state(true_pose)           #No noise
             print('Measured state', measured_state)
-            
+
             traj.update_state( measured_state )
             traj.learn_update()
             traj.save_poses('paths/Step' + f'{iter} poses.json')

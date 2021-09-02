@@ -25,14 +25,14 @@ def get_manual_nerf(name):
     if name =='empty':
         class FakeRenderer:
             @typechecked
-            def get_density(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
+            def get_density(self, points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
                 return torch.zeros_like( points[...,0] )
         return FakeRenderer()
 
     if name =='cylinder':
         class FakeRenderer:
             @typechecked
-            def get_density(points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
+            def get_density(self, points: TensorType["batch":..., 3]) -> TensorType["batch":...]:
                 x = points[..., 0]
                 y = points[..., 1] - 1
 
@@ -145,7 +145,7 @@ class System:
     def get_next_action(self) -> TensorType[1,"state_dim"]:
         actions = self.get_actions()
         # fz, tx, ty, tz
-        return actions[0, None, :]
+        return actions[1, None, :]
 
     def get_full_state(self):
         rot_matrix, z_accel = self.get_rots_and_accel()
