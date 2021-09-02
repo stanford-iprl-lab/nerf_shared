@@ -150,7 +150,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         ### [right, up, back]
         agent = Agent(x0, sim_cfg, agent_cfg, agent_type=None)
 
-        true_poses = [x0]
+        true_states = [x0]
         pose_estimates = []
         for iter in trange(N):
 
@@ -160,7 +160,9 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
 
             #Step based on recommended action. Action should be array, not tensor! Output true_pose and gt_img are arrays.
             true_pose, true_state, gt_img = agent.step(action)
-            true_poses.append(true_state)
+            true_states.append(true_state)
+
+            print('True state', true_state)
 
             #Estimate pose from ground truth image initialized from above. Estimate_pose will print MSE loss and rotational & translational errors.
             #Assume inputs to estimate_pose are arrays.
@@ -179,9 +181,11 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
             #measured_state = current_state + randomness
             #Convert 4x4 pose matrix into [x,y,z, yaw] 
             measured_state = convert_pose_to_planner_state(true_pose)           #No noise
+            print('Measured state', measured_state)
+            
             traj.update_state( measured_state )
             traj.learn_update()
-            # traj.save_poses(???)
+            traj.save_poses('paths/Step' + f'{iter} poses.json')
             traj.plot()
 
         #Visualizes the trajectory
