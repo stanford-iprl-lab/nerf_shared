@@ -142,7 +142,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         #TODO: MOVE AGENT CONFIG TO OUTSIDE
         agent_cfg = {'dt': cfg["T_final"]/cfg["steps"],
                     'mass': 1.,
-                    'g': 9.81,
+                    'g': 10,
                     'I': torch.eye(3)}
 
         ###TODO: MAKE SURE YOU ALSO PASS IN SIMULATOR CONFIGS
@@ -154,13 +154,12 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         true_states = [x0]
         pose_estimates = []
 
-        actions = traj.get_actions()
+        #actions = traj.get_actions()
         
-        for action in actions:
-            true_pose, true_state, gt_img = agent.step(action)
-            print(true_state)
+        #for action in actions:
+        #    true_pose = agent.step(action)
+        #    print(action, true_pose)
 
-        '''
         for iter in trange(N):
 
             print(f'Iteration {iter}')
@@ -202,7 +201,6 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
             traj.learn_update()
             traj.save_poses('paths/Step' + f'{iter} poses.json')
             traj.plot()
-            '''
 
         #Visualizes the trajectory
         with torch.no_grad():

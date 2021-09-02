@@ -160,6 +160,13 @@ class Agent():
 
         return new_pose, newstate.detach(), img[...,:3]
 
+        '''
+        new_state = self.drone_dynamics_test(self.x, action)
+        self.x = new_state
+
+        return new_state
+        '''
+
     def drone_dynamics(self, state, action):
         #State is 18 dimensional [pos(3), vel(3), R (9), omega(3)] where pos, vel are in the world frame, R is the rotation from points in the body frame to world frame
         # and omega are angular rates in the body frame
@@ -206,6 +213,42 @@ class Agent():
 
         next_state[15:] = omega + domega * self.dt
 
+        return next_state
+
+    def drone_dynamics_test(self, state, action):
+        #TODO batch this
+        state = state.cpu().detach().numpy()
+        pos = state[...,0:3]
+        v   = state[...,3:6]
+        euler_vector = state[...,6:9]
+        omega = state[...,9:12]
+
+        action = action.cpu().detach().numpy()
+
+        fz = action[...,0, None]
+        torque = action[...,1:4]
+
+        e3 = np.array([0,0,1])
+
+        mass = 1
+        dt = 0.1
+        g = -10
+        J = np.eye(3)
+        J_inv = np.linalg.inv(J)
+
+        R = vec_to_rot_matrix(euler_vector)
+
+        dv = g * e3 + R @ (fz * e3) / mass
+        domega = J_inv @ torque - J_inv @ skew_matrix(omega) @ J @ omega
+        dpos = v
+
+        next_v = torch.tensor(dv * dt + v)
+        next_euler = torch.tensor(rot_matrix_to_vec(R @ vec_to_rot_matrix(omega * dt)))
+        # next_euler = rot_matrix_to_vec(R @ vec_to_rot_matrix(omega * dt) @ vec_to_rot_matrix(domega * dt**2))
+        next_omega = torch.tensor(domega * dt + omega)
+        next_pos = torch.tensor(dpos * dt + pos) # + 0.5 * dv * dt**2
+
+        next_state = torch.cat([next_pos, next_v, next_euler, next_omega], dim=-1)
         return next_state
 
 

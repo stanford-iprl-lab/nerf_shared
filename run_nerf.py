@@ -293,8 +293,8 @@ def train():
 
         P0 = torch.eye(4)
         PT = torch.eye(4)
-        T = 5
-        N = 5
+        T = 20
+        N = 20
         N_iter = 300
         scene_dir = './scenes/' + expname + '/scene.gltf'
         
