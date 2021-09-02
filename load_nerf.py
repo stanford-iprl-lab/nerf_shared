@@ -155,6 +155,17 @@ def main():
                 
     output = nerf.get_density(coods)
 
+
+    maxpool = torch.nn.MaxPool3d(kernel_size = 5)
+
+    print(output.shape)
+    output = maxpool(output[None,None,...])[0,0,...]
+    print(output.shape)
+
+    ax = plt.figure().add_subplot(projection='3d')
+    ax.voxels(output > 0.33,  edgecolor='k') #0.33 for violin
+    plt.show()
+
     # into_page_dim, x_dim, y_dim  = 0,  1, 2
     # into_page_dim, x_dim, y_dim  = 1,  0, 2
     into_page_dim, x_dim, y_dim  = 2,  0, 1
@@ -168,9 +179,11 @@ def main():
     print("happy")
     # exit()
 
-    plt.pcolormesh(x_image, y_image, im)
-    # plt.imshow(im)
+    # plt.pcolormesh(x_image, y_image, im)
+    plt.imshow(im)
     plt.show()
+
+
 
 
 if __name__ == "__main__":
