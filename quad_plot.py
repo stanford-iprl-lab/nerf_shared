@@ -257,10 +257,12 @@ class System:
 
         self.plot_graph(ax_graph) 
         plt.tight_layout()
-        plt.show()
+        #plt.show()
+        plt.savefig('./paths/trajectory')
+        plt.close()
 
     def plot_graph(self, ax):
-        actions = self.get_actions().detach().numpy() 
+        actions = self.get_actions().cpu().detach().numpy() 
         ax.plot(actions[...,0], label="fz")
         ax.plot(actions[...,1], label="tx")
         ax.plot(actions[...,2], label="ty")
@@ -286,13 +288,13 @@ class System:
 
         # PLOT PATH
         # S, 1, 3
-        pos = self.body_to_world( torch.zeros((1,3))).detach().numpy()
+        pos = self.body_to_world( torch.zeros((1,3))).cpu().detach().numpy()
         # print(pos.shape)
         ax.plot( pos[:,0,0], pos[:,0,1],   pos[:,0,2],  )
 
         # PLOTS BODY POINTS
         # S, P, 2
-        body_points = self.body_to_world( self.robot_body ).detach().numpy()
+        body_points = self.body_to_world( self.robot_body ).cpu().detach().numpy()
         for i, state_body in enumerate(body_points):
             if i < self.start_states.shape[0]:
                 color = 'r.'
@@ -307,7 +309,7 @@ class System:
         colors = ["r", "g", "b"]
 
         # S, 4, 2
-        points_world_frame = self.body_to_world(points).detach().numpy()
+        points_world_frame = self.body_to_world(points).cpu().detach().numpy()
         for state_axis in points_world_frame:
             for i in range(1, 4):
                 ax.plot(state_axis[[0,i], 0],
@@ -323,8 +325,8 @@ class System:
         with open(filename,"w+") as f:
             for pos, rot in zip(states[...,:3], rot_mats):
                 pose = np.zeros((4,4))
-                pose[:3, :3] = rot.detach().numpy()
-                pose[:3, 3]  = pos.detach().numpy()
+                pose[:3, :3] = rot.cpu().detach().numpy()
+                pose[:3, 3]  = pos.cpu().detach().numpy()
                 pose[3,3] = 1
 
                 json.dump(pose.tolist(), f)
@@ -472,6 +474,7 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
 
     return rot_vec
 
-
+'''
 if __name__ == "__main__":
     main()
+'''

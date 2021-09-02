@@ -21,7 +21,6 @@ from load_blender import load_blender_data
 from load_LINEMOD import load_LINEMOD_data
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 np.random.seed(0)
 DEBUG = False
 
@@ -225,9 +224,10 @@ def create_nerf(args):
     if len(ckpts) > 0 and not args.no_reload:
         ckpt_path = ckpts[-1]
         print('Reloading from', ckpt_path)
-        ckpt = torch.load(ckpt_path, map_location=device)
+        ckpt = torch.load(ckpt_path)
 
         start = ckpt['global_step']
+
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
 
         # Load model
@@ -309,13 +309,28 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, pytest=F
     rgb_map = torch.sum(weights[...,None] * rgb, -2)  # [N_rays, 3]
 
     depth_map = torch.sum(weights * z_vals, -1)
+
+    #print(depth_map.shape)
+
+    depth_expanded = depth_map.unsqueeze(-1).expand(z_vals.shape) # specifies new size
+
+    #print(depth_expanded.shape)
+
+    depth_offset = (depth_expanded - z_vals)**2
+
+    #print(depth_offset.shape)
+
+    depth_var = torch.sum(weights * depth_offset, -1)
+
+    #print(depth_var.shape)
+
     disp_map = 1./torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
     acc_map = torch.sum(weights, -1)
 
     if white_bkgd:
         rgb_map = rgb_map + (1.-acc_map[...,None])
 
-    return rgb_map, disp_map, acc_map, weights, depth_map
+    return rgb_map, disp_map, acc_map, weights, (depth_map, depth_var)
 
 
 def render_rays(ray_batch,
@@ -424,6 +439,8 @@ def render_rays(ray_batch,
         ret['disp0'] = disp_map_0
         ret['acc0'] = acc_map_0
         ret['z_std'] = torch.std(z_samples, dim=-1, unbiased=False)  # [N_rays]
+        ret['depth'] = depth_map[0]
+        ret['depth_var'] = depth_map[1]
 
     for k in ret:
         if (torch.isnan(ret[k]).any() or torch.isinf(ret[k]).any()) and DEBUG:
