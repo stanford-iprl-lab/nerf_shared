@@ -188,9 +188,14 @@ class Agent():
         # Propagate rotation matrix using exponential map of the angle displacements
         angle = omega*self.dt
         theta = torch.norm(angle, p=2)
-        K = skew_matrix_torch(angle)
+        if theta == 0:
+            exp_i = torch.eye(3)
+        else:
+            exp_i = torch.eye(3)
+            angle_norm = angle/theta
+            K = skew_matrix_torch(angle_norm)
 
-        exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
+            exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
 
         next_R = R @ exp_i
 

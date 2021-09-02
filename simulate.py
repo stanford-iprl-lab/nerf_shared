@@ -118,7 +118,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         cfg = {"T_final": 2,
                 "steps": 20,
                 "lr": 0.001,
-                "epochs_init": 2500,
+                "epochs_init": 500,
                 "fade_out_epoch": 500,
                 "fade_out_sharpness": 10,
                 "epochs_update": 500,
@@ -153,11 +153,21 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
 
         true_states = [x0]
         pose_estimates = []
+
+        actions = traj.get_actions()
+        
+        for action in actions:
+            true_pose, true_state, gt_img = agent.step(action)
+            print(true_state)
+
+        '''
         for iter in trange(N):
 
             print(f'Iteration {iter}')
 
             action = traj.get_next_action()
+
+            #action = torch.tensor([12, 10, 10, 10])
 
             print('Action', action)
 
@@ -192,6 +202,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
             traj.learn_update()
             traj.save_poses('paths/Step' + f'{iter} poses.json')
             traj.plot()
+            '''
 
         #Visualizes the trajectory
         with torch.no_grad():
