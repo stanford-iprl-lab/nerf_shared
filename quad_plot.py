@@ -81,6 +81,27 @@ class System:
 
         self.epoch = 0
 
+    def a_star_init(self):
+        #TODO WARNING
+        side = 100
+        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
+
+        # side, side, side, 3
+        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+            
+        output = self.nerf(coods)
+        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
+        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
+        # 20, 20, 20
+
+        self.start_states[1, :3]
+        self.end_states[-2, :3]
+
+        path = astar(occupied, start, end)
+        #unfinished
+
+
+
     def params(self):
         return [self.states]
 
@@ -91,7 +112,7 @@ class System:
         mass = 1
         J = torch.eye(3)
 
-        rot_matrix, z_accel = self.get_rots_and_accel()
+        rot_matrix, z_accel, _ = self.get_rots_and_accel()
 
         #TODO horrible -> there should be a better way without rotation matricies
         #calculate angular velocities
@@ -122,6 +143,8 @@ class System:
         prev_vel = vel[:-1, :]
         next_vel = vel[1:, :]
 
+        current_vel = (next_vel + prev_vel)/2
+
         target_accel = (next_vel - prev_vel)/self.dt - g
         z_accel     = torch.norm(target_accel, dim=-1, keepdim=True)
 
@@ -140,7 +163,9 @@ class System:
 
         # S, 3, 3 # assembled manually from basis vectors
         rot_matrix = torch.stack( [x_axis_body, y_axis_body, z_axis_body], dim=-1)
-        return rot_matrix, z_accel
+
+        # return pos, current_vel, rot_matrix, angular_rate, 
+        return rot_matrix, z_accel, current_vel
 
     def get_next_action(self) -> TensorType[1,"state_dim"]:
         actions = self.get_actions()
@@ -148,26 +173,17 @@ class System:
         return actions[1, None, :]
 
     def get_full_state(self):
-        rot_matrix, z_accel = self.get_rots_and_accel()
-
-        g = torch.tensor([0,0,-10])
-
-        states = self.get_states()
-        prev_state = states[:-1, :]
-        next_state = states[1:, :]
-
-        diff = (next_state - prev_state)/self.dt
-        vel = diff[..., :3]
+        rot_matrix, z_accel, current_vel = self.get_rots_and_accel()
 
         # pos, vel, rotation matrix
-        return states[:, :3], vel, rot_matrix
+        return states[:, :3], current_vel, rot_matrix
 
 
     @typechecked
     def body_to_world(self, points: TensorType["batch", 3]) -> TensorType["states", "batch", 3]:
         states = self.get_states()
         pos = states[:, :3]
-        rot_matrix, _ = self.get_rots_and_accel()
+        rot_matrix, _, _ = self.get_rots_and_accel()
 
         # S, 3, P    =    S,3,3       3,P       S, 3, _
         world_points =  rot_matrix @ points.T + pos[..., None]
@@ -320,7 +336,7 @@ class System:
 
     def save_poses(self, filename):
         states = self.get_states()
-        rot_mats, _ = self.get_rots_and_accel()
+        rot_mats, _, _ = self.get_rots_and_accel()
 
         num_poses = 0
         pose_dict = {}
@@ -377,7 +393,7 @@ def main():
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
-    renderer = get_nerf('configs/stonehenge.txt')
+    # renderer = get_nerf('configs/stonehenge.txt')
     # stonehenge - simple
     start_state = torch.tensor([-0.05,-0.9, 0.2, 0])
     end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
@@ -390,7 +406,11 @@ def main():
     # start_state = torch.tensor([-0.43, -0.75, 0.2, 0])
     # end_state = torch.tensor([-0.26, 0.48, 0.15, 0])
 
+<<<<<<< HEAD
     #nerf = get_manual_nerf("empty")
+=======
+    renderer = get_manual_nerf("empty")
+>>>>>>> 64db1a630fe591bbe6ed0ce3a84f15ed93412268
 
     #PARAM
     # cfg = {"T_final": 2,
@@ -479,7 +499,67 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
 
     return rot_vec
 
+<<<<<<< HEAD
 '''
+=======
+def astar(occupied, start, goal):
+    def heuristic(a, b):
+        return np.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2)
+
+    def inbounds(point):
+        for x, size in zip(point, occupied.shape):
+            if x < 0 or x >= size: return False
+        return True
+
+    neighbors = [( 1,0,0),(-1, 0, 0),
+                 ( 0,1,0),( 0,-1, 0),
+                 ( 0,0,1),( 0, 0,-1)]
+
+    close_set = set()
+
+    came_from = {}
+    gscore = {start: 0}
+
+    open_heap = []
+    heapq.heappush(open_heap, (heuristic(start, goal), start))
+
+    while open_heap:
+        current = heapq.heappop(open_heap)[1]
+
+        if current == goal:
+            data = []
+            while current in came_from:
+                data.append(current)
+                current = came_from[current]
+            assert current == start
+            data.append(current)
+            return reversed(data)
+
+        close_set.add(current)
+
+        for i, j, k in neighbors:
+            neighbor = (current[0] + i, current[1] + j, current[2] + k)
+            if not inbounds( neighbor ):
+                continue
+
+            if occupied[neighbor]:
+                continue
+
+            tentative_g_score = gscore[current] + 1
+
+            if tentative_g_score < gscore.get(neighbor, float("inf")):
+                came_from[neighbor] = current
+                gscore[neighbor] = tentative_g_score
+
+                fscore = tentative_g_score + heuristic(neighbor, goal)
+                node = (fscore, neighbor)
+                if node not in open_heap:
+                    heapq.heappush(open_heap, node) 
+
+    raise ValueError("Failed to find path!")
+
+
+>>>>>>> 64db1a630fe591bbe6ed0ce3a84f15ed93412268
 if __name__ == "__main__":
     main()
 '''
