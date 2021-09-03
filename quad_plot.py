@@ -111,7 +111,7 @@ class System:
         mass = 1
         J = torch.eye(3)
 
-        rot_matrix, z_accel = self.get_rots_and_accel()
+        rot_matrix, z_accel, _ = self.get_rots_and_accel()
 
         #TODO horrible -> there should be a better way without rotation matricies
         #calculate angular velocities
@@ -142,6 +142,8 @@ class System:
         prev_vel = vel[:-1, :]
         next_vel = vel[1:, :]
 
+        current_vel = (next_vel + prev_vel)/2
+
         target_accel = (next_vel - prev_vel)/self.dt - g
         z_accel     = torch.norm(target_accel, dim=-1, keepdim=True)
 
@@ -160,7 +162,9 @@ class System:
 
         # S, 3, 3 # assembled manually from basis vectors
         rot_matrix = torch.stack( [x_axis_body, y_axis_body, z_axis_body], dim=-1)
-        return rot_matrix, z_accel
+
+        # return pos, current_vel, rot_matrix, angular_rate, 
+        return rot_matrix, z_accel, current_vel
 
     def get_next_action(self) -> TensorType[1,"state_dim"]:
         actions = self.get_actions()
@@ -168,26 +172,17 @@ class System:
         return actions[0, None, :]
 
     def get_full_state(self):
-        rot_matrix, z_accel = self.get_rots_and_accel()
-
-        g = torch.tensor([0,0,-10])
-
-        states = self.get_states()
-        prev_state = states[:-1, :]
-        next_state = states[1:, :]
-
-        diff = (next_state - prev_state)/self.dt
-        vel = diff[..., :3]
+        rot_matrix, z_accel, current_vel = self.get_rots_and_accel()
 
         # pos, vel, rotation matrix
-        return states[:, :3], vel, rot_matrix
+        return states[:, :3], current_vel, rot_matrix
 
 
     @typechecked
     def body_to_world(self, points: TensorType["batch", 3]) -> TensorType["states", "batch", 3]:
         states = self.get_states()
         pos = states[:, :3]
-        rot_matrix, _ = self.get_rots_and_accel()
+        rot_matrix, _, _ = self.get_rots_and_accel()
 
         # S, 3, P    =    S,3,3       3,P       S, 3, _
         world_points =  rot_matrix @ points.T + pos[..., None]
@@ -336,7 +331,7 @@ class System:
 
     def save_poses(self, filename):
         states = self.get_states()
-        rot_mats, _ = self.get_rots_and_accel()
+        rot_mats, _, _ = self.get_rots_and_accel()
 
         with open(filename,"w+") as f:
             for pos, rot in zip(states[...,:3], rot_mats):
