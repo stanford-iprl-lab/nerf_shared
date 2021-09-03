@@ -406,11 +406,7 @@ def main():
     # start_state = torch.tensor([-0.43, -0.75, 0.2, 0])
     # end_state = torch.tensor([-0.26, 0.48, 0.15, 0])
 
-<<<<<<< HEAD
     #nerf = get_manual_nerf("empty")
-=======
-    renderer = get_manual_nerf("empty")
->>>>>>> 64db1a630fe591bbe6ed0ce3a84f15ed93412268
 
     #PARAM
     # cfg = {"T_final": 2,
@@ -499,9 +495,6 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
 
     return rot_vec
 
-<<<<<<< HEAD
-'''
-=======
 def astar(occupied, start, goal):
     def heuristic(a, b):
         return np.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2)
@@ -558,8 +551,7 @@ def astar(occupied, start, goal):
 
     raise ValueError("Failed to find path!")
 
-
->>>>>>> 64db1a630fe591bbe6ed0ce3a84f15ed93412268
+'''
 if __name__ == "__main__":
     main()
 '''
