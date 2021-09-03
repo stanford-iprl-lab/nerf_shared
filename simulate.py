@@ -1,3 +1,4 @@
+from nerf_core import render
 import os, sys
 import numpy as np
 import imageio
@@ -103,8 +104,12 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         end_vel   = torch.tensor([0, 0, 0, 0]).to(device)
 
         # stonehenge - simple
-        start_state = torch.tensor([-0.05,-0.9, 0.2, 0]).to(device)
-        end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0]).to(device)
+        #start_state = torch.tensor([-0.05,-0.9, 0.2, 0]).to(device)
+        #end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0]).to(device)
+
+        #Playground
+        start_state = torch.tensor([0, -0.8, 0.01, 0])
+        end_state   = torch.tensor([0,  0.9, 0.6 , 0])
 
         # stonehenge - tricky
         # start_state = torch.tensor([ 0.4 ,-0.9, 0.2, 0])
@@ -118,7 +123,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         cfg = {"T_final": 2,
                 "steps": 20,
                 "lr": 0.001,
-                "epochs_init": 500,
+                "epochs_init": 2500,
                 "fade_out_epoch": 500,
                 "fade_out_sharpness": 10,
                 "epochs_update": 500,
@@ -128,7 +133,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         #Planner should initialize with A*
         #Arguments: Initial Pose P0, final pose PT, Number of Time Steps T, Discretization of A* N
 
-        traj = System(get_manual_nerf("empty"), start_state, end_state, start_vel, end_vel, cfg)
+        traj = System(renderer, start_state, end_state, start_vel, end_vel, cfg)
         traj.learn_init()
         traj.plot()
 
@@ -160,23 +165,24 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         #    true_pose = agent.step(action)
         #    print(action, true_pose)
 
-        for iter in trange(N):
+        
+        for iter in trange(1):
 
             print(f'Iteration {iter}')
 
-            action = traj.get_next_action()
+            #action = traj.get_next_action()
 
             #action = torch.tensor([12, 10, 10, 10])
 
-            print('Action', action)
+            #print('Action', action)
 
             #Step based on recommended action. Action should be array, not tensor! Output true_pose and gt_img are arrays.
-            true_pose, true_state, gt_img = agent.step(action)
-            true_states.append(true_state)
+            #true_pose, true_state, gt_img = agent.step(action)
+            #true_states.append(true_state)
 
-            plt.imsave('paths/traj_image.png', gt_img)
+            #plt.imsave('paths/traj_image.png', gt_img)
 
-            print('True state', true_state)
+            #print('True state', true_state)
 
             #Estimate pose from ground truth image initialized from above. Estimate_pose will print MSE loss and rotational & translational errors.
             #Assume inputs to estimate_pose are arrays.
@@ -184,17 +190,19 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
             #pose_estimate = estimator.estimate_pose(pose_init, gt_img, true_pose)
             #pose_estimates.append(pose_estimate)
 
-            # # idealy something like this but we jank it for now
-            # action = traj.get_actions()[0 or 1, :]
-            # current_state = next_state(action)
+            # Use planner dynamics as real dynamics + noise. The current state is once we've already taken an action.
+            current_state = traj.states[0, :].detach()
+            randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
 
-            # we jank it
-            #current_state = traj.states[0, :].detach()
-            #randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
+            states, vel, rot = traj.get_full_state()
 
-            #measured_state = current_state + randomness
-            #Convert 4x4 pose matrix into [x,y,z, yaw] 
-            measured_state = convert_pose_to_planner_state(true_pose)           #No noise
+            print(states.shape)
+            print(vel.shape)
+            print(rot.shape)
+
+            # True state
+            measured_state = current_state + randomness     
+
             print('Measured state', measured_state)
 
             traj.update_state( measured_state )

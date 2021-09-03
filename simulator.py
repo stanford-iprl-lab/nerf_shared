@@ -131,8 +131,8 @@ class Simulation():
 
         depth = self.sim.get_sensor_observations()['depth_camera']
 
-        gray = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
-        mask = cv2.compare(gray,5,cv2.CMP_LT)
-        obs[mask > 0] = 255
+        #gray = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
+        #mask = cv2.compare(gray,5,cv2.CMP_LT)
+        #obs[mask > 0] = 255
 
         return np.array(obs)

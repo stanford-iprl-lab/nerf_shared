@@ -323,16 +323,18 @@ class System:
         rot_mats, _ = self.get_rots_and_accel()
 
         num_poses = 0
+        pose_dict = {}
+        poses = []
         with open(filename,"w+") as f:
             for pos, rot in zip(states[...,:3], rot_mats):
                 num_poses += 1
                 pose = np.zeros((4,4))
                 pose[:3, :3] = rot.cpu().detach().numpy()
                 pose[:3, 3]  = pos.cpu().detach().numpy()
-                pose[3,3] = 1
-
-                json.dump(pose.tolist(), f)
-                f.write('\n')
+                pose[3,3] = 1.
+                poses.append(pose.tolist())
+            pose_dict["poses"] = poses
+            json.dump(pose_dict, f)
         print('Total poses saved', num_poses)
 
 
