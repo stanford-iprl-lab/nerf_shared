@@ -47,9 +47,7 @@ def plot_nerf(ax_map, nerf):
 
 
 class System:
-    def __init__(self, renderer, start_state, end_state,
-                        start_vel, end_vel, 
-                        cfg):
+    def __init__(self, renderer, start_full_state, end_full_state, cfg):
         self.nerf = renderer.get_density
 
         self.T_final            = cfg['T_final']
@@ -62,9 +60,17 @@ class System:
 
         self.dt = self.T_final / self.steps
 
-        # create initial and final 3 states to constrain: position, velocity and possibly angle in the future
-        self.start_states = start_state[None,:] + torch.tensor([-1,0,1])[:,None] * self.dt * start_vel
-        self.end_states   = end_state[None,:]   + torch.tensor([-1,0,1])[:,None] * self.dt * end_vel  
+        self.g = torch.tensor([0,0,-10])
+
+        # # create initial and final 3 states to constrain: position, velocity and possibly angle in the future
+        # self.start_states = start_state[None,:] + torch.tensor([-1,0,1])[:,None] * self.dt * start_vel
+        # self.end_states   = end_state[None,:]   + torch.tensor([-1,0,1])[:,None] * self.dt * end_vel  
+
+        self.start_full_state = start_full_state
+        self.start_action = torch.zeros(4)
+
+        self.end_full_state = end_full_state
+        self.end_action = torch.zeros(4)
 
         slider = torch.linspace(0, 1, self.steps)[1:-1, None]
 
@@ -80,36 +86,54 @@ class System:
 
         self.epoch = 0
 
-    def a_star_init(self):
-        #TODO WARNING
-        side = 100
-        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
-
-        # side, side, side, 3
-        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
-            
-        output = self.nerf(coods)
-        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
-        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
-        # 20, 20, 20
-
-        self.start_states[1, :3]
-        self.end_states[-2, :3]
-
-        path = astar(occupied, start, end)
-        #unfinished
-
-
-
     def params(self):
         return [self.states]
 
     def get_states(self):
+        start_full_states = torch.cat( [ self.next_state(self.start_full_state, self.start_action, -self.dt),
+                                         self.start_full_state,
+                                         self.next_state(self.start_full_state, self.start_action, self.dt)] )
+
+        start_states = self.get_4d_state(start_full_states)
+
+        end_full_states = torch.cat( [ self.next_state(self.end_full_state, self.end_action, -self.dt),
+                                         self.end_full_state,
+                                         self.next_state(self.end_full_state, self.end_action, self.dt)] )
+
+        end_states = self.get_4d_state(end_full_states)
+
+        ##solve
+        ## (v1 + v2) = target_vel
+        ## (v2 - v1)/dt = target_accel
+
+        #target_accel = (start_rot_matrix @ torch.tensor([0,0,1.0])) * start_thrust + self.g
+
+        #v2 = (target_vel + target_accel * self.dt)/2
+        #v1 = (target_vel - target_accel * self.dt)/2
+
+        #self.start_states = start_state[None,:] + self.dt * torch.stack([ -v1, torch.zeros(3), v2], dim=0)
+
         return torch.cat( [self.start_states, self.states, self.end_states], dim=0)
 
+    @staticmethod
+    def get_4d_state(self, states):
+        pos = states[:, 0:3]
+        v   = states[:, 3:6]
+        R_flat = states[:, 6:15]
+        R = R_flat.reshape((-1, 3, 3))
+        # omega = self.states[-1, 15:]
+
+        forward = R @ torch.tensor( [1.0, 0, 0 ] )
+        x = forward[:,0]
+        y = forward[:,1]
+        angle = torch.atan2(y, x)
+
+        return torch.cat( [pos, torch.tensor([angle]) ], dim = -1).detach()
+
+
     def get_actions(self):
-        mass = 1
-        J = torch.eye(3)
+        self.mass = 1
+        self.J = torch.eye(3)
 
         rot_matrix, z_accel = self.get_rots_and_accel()
 
@@ -125,12 +149,11 @@ class System:
         angular_accel = (ang_vel[1:,...] - ang_vel[:-1,...])/self.dt
 
         # S, 3    3,3      S, 3, 1
-        torques = (J @ angular_accel[...,None])[...,0]
+        torques = (self.J @ angular_accel[...,None])[...,0]
 
-        return torch.cat([ z_accel*mass, torques ], dim=-1)
+        return torch.cat([ z_accel*self.mass, torques ], dim=-1)
 
-    def get_rots_and_accel(self):
-        g = torch.tensor([0,0,-10])
+    def get_rots_and_accel(self, return_z_accel = False):
 
         states = self.get_states()
         prev_state = states[:-1, :]
@@ -141,8 +164,9 @@ class System:
 
         prev_vel = vel[:-1, :]
         next_vel = vel[1:, :]
+        current_vel = (prev_vel + next_vel)/2
 
-        target_accel = (next_vel - prev_vel)/self.dt - g
+        target_accel = (next_vel - prev_vel)/self.dt - self.g
         z_accel     = torch.norm(target_accel, dim=-1, keepdim=True)
 
         # needs to be pointing in direction of acceleration
@@ -160,12 +184,29 @@ class System:
 
         # S, 3, 3 # assembled manually from basis vectors
         rot_matrix = torch.stack( [x_axis_body, y_axis_body, z_axis_body], dim=-1)
+
+        # pos, vel, rot_matrix, omega
+        # ang_vel = rot_matrix_to_vec( rot_matrix[1:, ...] @ rot_matrix[:-1, ...].swapdims(-1,-2) ) / self.dt
         return rot_matrix, z_accel
+
+
 
     def get_next_action(self) -> TensorType[1,"state_dim"]:
         actions = self.get_actions()
+
+        next_action_index = self.start_states.shape[0] - 3
         # fz, tx, ty, tz
-        return actions[0, None, :]
+        return actions[next_action_index, :]
+
+    @typechecked
+    def update_state(self, measured_state: TensorType["state_dim"], measured_vel: TensorType["state_dim"]):
+        measured_state = measured_state[None, :]
+        measured_vel = measured_vel[None, :]
+        # print(self.start_states.shape)
+        # print(measured_state.shape)
+
+        self.start_states = torch.cat( [self.start_states[:-1, :], measured_state, measured_state + measured_vel * self.dt], dim=0 )
+        self.states = self.states[1:, :].detach().requires_grad_(True)
 
     def get_full_state(self):
         rot_matrix, z_accel = self.get_rots_and_accel()
@@ -182,6 +223,54 @@ class System:
         # pos, vel, rotation matrix
         return states[:, :3], vel, rot_matrix
 
+    @typechecked
+    def next_state(self, state: TensorType[18], action: TensorType[4], dt):
+        #State is 18 dimensional [pos(3), vel(3), R (9), omega(3)] where pos, vel are in the world frame, R is the rotation from points in the body frame to world frame
+        # and omega are angular rates in the body frame
+        next_state = torch.zeros(18)
+
+        #Actions are [total thrust, torque x, torque y, torque z]
+        fz = action[0]
+        tau = action[1:]
+
+        #Define state vector
+        pos = state[0:3]
+        v   = state[3:6]
+        R_flat = state[6:15]
+        R = R_flat.reshape((3, 3))
+        omega = state[15:]
+
+        # The acceleration
+        sum_action = torch.zeros(3)
+        sum_action[2] = fz
+
+        dv = (torch.tensor([0,0,-self.mass*self.g]) + R @ sum_action)/self.mass
+
+        # The angular accelerations
+        domega = torch.inverse(self.J) @ (tau - torch.cross(omega, self.J @ omega))
+
+        # Propagate rotation matrix using exponential map of the angle displacements
+        angle = omega*dt
+        theta = torch.norm(angle, p=2)
+        if theta == 0:
+            exp_i = torch.eye(3)
+        else:
+            exp_i = torch.eye(3)
+            angle_norm = angle/theta
+            K = skew_matrix(angle_norm)
+
+            exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
+
+        next_R = R @ exp_i
+
+        next_state[0:3] = pos + v * dt
+        next_state[3:6] = v + dv * dt
+
+        next_state[6:15] = next_R.reshape(-1)
+
+        next_state[15:] = omega + domega * dt
+
+        return next_state
 
     @typechecked
     def body_to_world(self, points: TensorType["batch", 3]) -> TensorType["states", "batch", 3]:
@@ -248,7 +337,7 @@ class System:
             opt.zero_grad()
             self.epoch = it
             loss = self.total_cost()
-            print(it, loss)
+            # print(it, loss)
             loss.backward()
             opt.step()
 
@@ -256,13 +345,6 @@ class System:
             # if it%save_step == 0:
         # self.save_poses("paths/"+str(it//save_step)+"_testing.json")
 
-    @typechecked
-    def update_state(self, measured_state: TensorType["state_dim"]):
-        measured_state = measured_state[None, :]
-        print(self.start_states.shape)
-        print(measured_state.shape)
-        self.start_states = torch.cat( [self.start_states, measured_state], dim=0 )
-        self.states = self.states[1:, :].detach().requires_grad_(True)
 
     def plot(self, fig = None):
         if fig == None:
@@ -295,6 +377,7 @@ class System:
         ax_right.plot(total_cost.detach().numpy(), 'black', label="cost")
         ax_right.plot(colision_loss.detach().numpy(), 'cyan', label="colision")
         ax.legend()
+        ax_right.legend()
 
     def plot_map(self, ax):
         ax.auto_scale_xyz([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
@@ -314,6 +397,8 @@ class System:
         for i, state_body in enumerate(body_points):
             if i < self.start_states.shape[0]:
                 color = 'r.'
+            elif i == self.start_states.shape[0]:
+                color = 'b.'
             else:
                 color = 'g.'
             ax.plot( *state_body.T, color, ms=72./ax.figure.dpi, alpha = 0.5)
@@ -349,69 +434,113 @@ class System:
                 f.write('\n')
 
 
+class Simulator:
+    @typechecked
+    def __init__(self, start_pos: TensorType[3], start_vel: TensorType[3]):
+        self.states = torch.cat( [start_pos, start_vel, torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
+        self.states = self.states[None,:]
+
+        self.mass = 1
+        self.I = torch.eye(3)
+        self.invI = torch.eye(3)
+        self.dt = 0.1 / 5
+        self.g = 10
+
+    @typechecked
+    def advance(self, action: TensorType[4]):
+        for _ in range(5):
+            self.internal_advance(action)
+
+    @typechecked
+    def internal_advance(self, action: TensorType[4]):
+        next_state = self.next_state(self.states[-1, :], action)
+        self.states = torch.cat( [self.states, next_state[None,:] ], dim=0 )
+
+    def get_4d_state(self, states):
+        pos = states[:, 0:3]
+        v   = states[:, 3:6]
+        R_flat = states[:, 6:15]
+        R = R_flat.reshape((-1, 3, 3))
+        # omega = self.states[-1, 15:]
+
+        forward = R @ torch.tensor( [1.0, 0, 0 ] )
+        x = forward[:,0]
+        y = forward[:,1]
+        angle = torch.atan2(y, x)
+
+        return torch.cat( [pos, torch.tensor([angle]) ], dim = -1).detach()
+
+    @typechecked
+    def body_to_world(self, points: TensorType["batch", 3]) -> TensorType["states", "batch", 3]:
+        pos = self.states[:, 0:3]
+        v   = self.states[:, 3:6]
+        R_flat = self.states[:, 6:15]
+        R = R_flat.reshape((-1, 3, 3))
+        omega = self.states[:, 15:]
+
+        # S, 3, P    =    S,3,3       3,P       S, 3, _
+        world_points =  R @ points.T + pos[..., None]
+        return world_points.swapdims(-1,-2)
+
+    @typechecked
+    def next_state(self, state: TensorType[18], action: TensorType[4]):
+        #State is 18 dimensional [pos(3), vel(3), R (9), omega(3)] where pos, vel are in the world frame, R is the rotation from points in the body frame to world frame
+        # and omega are angular rates in the body frame
+        next_state = torch.zeros(18)
+
+        #Actions are [total thrust, torque x, torque y, torque z]
+        fz = action[0]
+        tau = action[1:]
+
+        #Define state vector
+        pos = state[0:3]
+        v   = state[3:6]
+        R_flat = state[6:15]
+        R = R_flat.reshape((3, 3))
+        omega = state[15:]
+
+        # The acceleration
+        sum_action = torch.zeros(3)
+        sum_action[2] = fz
+
+        dv = (torch.tensor([0,0,-self.mass*self.g]) + R @ sum_action)/self.mass
+
+        # The angular accelerations
+        domega = self.invI @ (tau - torch.cross(omega, self.I @ omega))
+
+        # Propagate rotation matrix using exponential map of the angle displacements
+        angle = omega*self.dt
+        theta = torch.norm(angle, p=2)
+        if theta == 0:
+            exp_i = torch.eye(3)
+        else:
+            exp_i = torch.eye(3)
+            angle_norm = angle/theta
+            K = skew_matrix(angle_norm)
+
+            exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
+
+        next_R = R @ exp_i
+
+        next_state[0:3] = pos + v * self.dt
+        next_state[3:6] = v + dv * self.dt
+
+        next_state[6:15] = next_R.reshape(-1)
+
+        next_state[15:] = omega + domega * self.dt
+
+        return next_state
+
+
 def main():
-    #PARAM nerf config
-
-    #PARAM start and end positions for the planner. [x,y,z,yaw]
-
-    # renderer = get_nerf('configs/playground.txt')
-    # playgroud - under
-    # start_state = torch.tensor([0, -0.8, 0.01, 0])
-    # end_state   = torch.tensor([0,  0.9, 0.6 , 0])
-    
-    # playgroud - upper
-    # start_state = torch.tensor([-0.11, -0.7, 0.7, 0])
-    # end_state   = torch.tensor([-0.11, 0.45, 0.7, 0])
-
-    # playground - diag
-    # start_state = torch.tensor([ 0.25, -0.47, 0.01, 0])
-    # end_state   = torch.tensor([-0.25,  0.6,  0.6 , 0])
-
-    # playground - middle
-    # start_state = torch.tensor([ 0.5, 0.2, 0.3, 0])
-    # end_state   = torch.tensor([-0.3,   0, 0.5 , 0])
-
-    renderer = get_nerf('configs/violin.txt')
-    # violin - simple
-    # start_state = torch.tensor([-0.3 ,-0.5, 0.1, 0])
-    # end_state   = torch.tensor([-0.35, 0.7, 0.15 , 0])
-
-    # violin - dodge
-    # start_state = torch.tensor([-0.35,-0.5, 0.05, 0])
-    # end_state   = torch.tensor([ 0.1,  0.6, 0.3 , 0])
-
-    # violin - middle
-    # start_state = torch.tensor([0,-0.5, 0.1, 0])
-    # end_state   = torch.tensor([0, 0.7, 0.15 , 0])
 
     #PARAM initial and final velocities
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
 
-    # renderer = get_nerf('configs/stonehenge.txt')
-    # stonehenge - simple
+    renderer = get_manual_nerf("empty")
     start_state = torch.tensor([-0.05,-0.9, 0.2, 0])
     end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
-
-    # stonehenge - tricky
-    # start_state = torch.tensor([ 0.4 ,-0.9, 0.2, 0])
-    # end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
-
-    # stonehenge - very simple
-    # start_state = torch.tensor([-0.43, -0.75, 0.2, 0])
-    # end_state = torch.tensor([-0.26, 0.48, 0.15, 0])
-
-    renderer = get_manual_nerf("empty")
-
-    #PARAM
-    # cfg = {"T_final": 2,
-    #         "steps": 20,
-    #         "lr": 0.001,#0.001,
-    #         "epochs_init": 500, #2000,
-    #         "fade_out_epoch": 0,#1000,
-    #         "fade_out_sharpness": 10,
-    #         "epochs_update": 500,
-    #         }
 
     cfg = {"T_final": 2,
             "steps": 20,
@@ -419,25 +548,34 @@ def main():
             "epochs_init": 2500,
             "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
-            "epochs_update": 500,
+            "epochs_update": 200,
             }
 
     traj = System(renderer, start_state, end_state, start_vel, end_vel, cfg)
     traj.learn_init()
     traj.plot()
 
-    if False:
+    sim = Simulator(start_state[:3], start_vel[:3])
+
+    if True:
         for step in range(cfg['steps']):
             # # idealy something like this but we jank it for now
-            # action = traj.get_actions()[0 or 1, :]
-            # current_state = next_state(action)
+            
+            action = traj.get_next_action()
+            # action = torch.zeros(4)
+            current_state = sim.advance(action)
+            # current_state = sim.advance(traj.get_actions()[0,:])
+            # current_state = sim.advance(traj.get_actions()[1,:])
 
             # we jank it
-            current_state = traj.states[0, :].detach()
-            randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
 
-            measured_state = current_state + randomness
-            traj.update_state( measured_state )
+            real_state, real_vel = sim.get_4d_state()
+            predicted_state = traj.states[1, :].detach()
+            print("action", action)
+            print("real", real_state)
+            print("pred", predicted_state)
+
+            traj.update_state( real_state , real_vel)
             traj.learn_update()
             # traj.save_poses(???)
             traj.plot()
@@ -490,61 +628,35 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
 
     return rot_vec
 
-def astar(occupied, start, goal):
-    def heuristic(a, b):
-        return np.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2)
+@typechecked
+def vec_to_rot_matrix(rot_vec: TensorType["batch":..., 3]) -> TensorType["batch":..., 3,3]:
+    assert not torch.any(torch.isnan(rot_vec))
 
-    def inbounds(point):
-        for x, size in zip(point, occupied.shape):
-            if x < 0 or x >= size: return False
-        return True
+    angle = torch.norm(rot_vec, dim=-1, keepdim=True)
+    axis = rot_vec / (1e-5 + angle)
+    S = skew_matrix(axis)
+    # print(S.shape)
+    # print(angle.shape)
+    angle = angle[...,None]
+    rot_matrix = (
+            torch.eye(3)
+            + torch.sin(angle) * S
+            + (1 - torch.cos(angle)) * S @ S
+            )
+    return rot_matrix
 
-    neighbors = [( 1,0,0),(-1, 0, 0),
-                 ( 0,1,0),( 0,-1, 0),
-                 ( 0,0,1),( 0, 0,-1)]
+@typechecked
+def skew_matrix(vec: TensorType["batch":..., 3]) -> TensorType["batch":..., 3,3]:
+    batch_dims = vec.shape[:-1]
+    S = torch.zeros(*batch_dims, 3, 3)
+    S[..., 0, 1] = -vec[..., 2]
+    S[..., 0, 2] =  vec[..., 1]
+    S[..., 1, 0] =  vec[..., 2]
+    S[..., 1, 2] = -vec[..., 0]
+    S[..., 2, 0] = -vec[..., 1]
+    S[..., 2, 1] =  vec[..., 0]
+    return S
 
-    close_set = set()
-
-    came_from = {}
-    gscore = {start: 0}
-
-    open_heap = []
-    heapq.heappush(open_heap, (heuristic(start, goal), start))
-
-    while open_heap:
-        current = heapq.heappop(open_heap)[1]
-
-        if current == goal:
-            data = []
-            while current in came_from:
-                data.append(current)
-                current = came_from[current]
-            assert current == start
-            data.append(current)
-            return reversed(data)
-
-        close_set.add(current)
-
-        for i, j, k in neighbors:
-            neighbor = (current[0] + i, current[1] + j, current[2] + k)
-            if not inbounds( neighbor ):
-                continue
-
-            if occupied[neighbor]:
-                continue
-
-            tentative_g_score = gscore[current] + 1
-
-            if tentative_g_score < gscore.get(neighbor, float("inf")):
-                came_from[neighbor] = current
-                gscore[neighbor] = tentative_g_score
-
-                fscore = tentative_g_score + heuristic(neighbor, goal)
-                node = (fscore, neighbor)
-                if node not in open_heap:
-                    heapq.heappush(open_heap, node) 
-
-    raise ValueError("Failed to find path!")
 
 
 if __name__ == "__main__":
