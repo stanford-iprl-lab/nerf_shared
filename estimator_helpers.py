@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import cv2
 import skimage
+import matplotlib.pyplot as plt
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -214,6 +215,10 @@ class Estimator():
                     print('Rotation error: ', rot_error)
                     print('Translation error: ', translation_error)
                     print('-----------------------------------')
+
+                    if (k+1) % 300 == 0:
+                        img_dummy = self.renderer.get_img_from_pose(pose)
+                        plt.imsave('./paths/rendered_img.png', img_dummy.cpu().detach().numpy())
         
         self.pose_prior = pose.cpu().detach().numpy()
 

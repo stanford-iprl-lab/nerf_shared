@@ -175,9 +175,14 @@ class System:
     def get_full_state(self):
         rot_matrix, z_accel, current_vel = self.get_rots_and_accel()
 
-        # pos, vel, rotation matrix
-        return states[:, :3], current_vel, rot_matrix
+        states = self.get_states()
 
+        states = states.clone().detach().cpu().numpy()
+
+        rot_matrix = rot_matrix.clone().detach().cpu().numpy()
+
+        # pos, vel, rotation matrix
+        return states, current_vel, rot_matrix
 
     @typechecked
     def body_to_world(self, points: TensorType["batch", 3]) -> TensorType["states", "batch", 3]:

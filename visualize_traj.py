@@ -206,10 +206,13 @@ assert sim.get_light_setup() == light_setup
 ################
 '''
 
-#agent, agent_transform = place_agent(sim)
-# initialize an agent
-agent = sim.initialize_agent(sim_settings["default_agent"])
+#poses = load_poses(pose_dir)
 
+poses = []
+with open(pose_dir, 'r') as fp:
+    meta = json.load(fp)
+    poses = meta['poses']
+    
 # get the primitive assets attributes manager
 prim_templates_mgr = sim.get_asset_template_manager()
 
@@ -220,35 +223,34 @@ object_handle = obj_templates_mgr.load_configs(object_dir)[0]
 
 drone_temp_handle = obj_templates_mgr.get_template_handles(object_dir + '/drone')[0]
 
+#agent, agent_transform = place_agent(sim)
+# initialize all agents
+objects = []
+
+agent = sim.initialize_agent(sim_settings["default_agent"])
+
 '''
-
-id_1 = sim.add_object_by_handle(drone_temp_handle)
-sim.set_translation(np.array([2.4, -0.64, 0]), id_1)
-
-# set one object to kinematic
-sim.set_object_motion_type(habitat_sim.physics.MotionType.KINEMATIC, id_1)
-
-# simulate
-observations = simulate(sim, dt=1.5, get_frames=True)
-'''
-
- # add robot object to the scene with the agent/camera SceneNode attached
+# add robot object to the scene with the agent/camera SceneNode attached
 id_1 = sim.add_object(object_handle, sim.agents[0].scene_node)
 
 # set one object to kinematic
 sim.set_object_motion_type(habitat_sim.physics.MotionType.KINEMATIC, id_1)
 
-#poses = load_poses(pose_dir)
+'''
 
-poses = []
-with open(pose_dir, 'r') as fp:
-    meta = json.load(fp)
-    poses = meta['poses']
-    
+for object_num in range(len(poses)):
+    objects.append(sim.add_object_by_handle(drone_temp_handle))
+
+    # set one object to kinematic
+    sim.set_object_motion_type(habitat_sim.physics.MotionType.KINEMATIC, objects[object_num])
+
+
+
 observations = []
 imgs = []
 
-# Convert poses into camera images
+'''
+# Convert poses into camera images as if agent is moving in trajectory
 
 for ind, pose in enumerate(poses):
     pose = np.array(pose)
@@ -274,6 +276,7 @@ for ind, pose in enumerate(poses):
     imgs.append(img)
 
     plt.imsave(output_path + f'{ind}.png', img)
+'''
 
 imageio.mimwrite(os.path.join(output_path, 'video.gif'), imgs, fps=8)
 

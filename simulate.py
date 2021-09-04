@@ -7,7 +7,7 @@ import random
 import time
 import torch
 from skimage.transform import resize
-from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Rotation
 
 from torchtyping import TensorDetail, TensorType
 from typeguard import typechecked
@@ -44,18 +44,44 @@ def convert_planner_init_to_agent_init(start_state, start_vel):
     return state
 
 def convert_pose_to_planner_state(pose):
+
     #Start state is size 4, start vel is size 3. Outputs 18 dimensional state. Assumes rotation is identity and angular rates are 0.
     state = torch.zeros(4)
 
-    r = R.from_matrix(np.array(pose[:3, :3]))
+    rot = pose[6:15].reshape((3, 3))
 
-    yaw, pitch, roll = r.as_euler('zyx')
+    r = Rotation.from_matrix(np.array(rot))
+
+    roll, pitch, yaw = r.as_euler('xyz')
 
     #Construct state
-    state[:3] = torch.tensor(pose[:3, 3])
-    state[-1] = torch.tensor(yaw)
+    state[:3] = torch.tensor(pose[:3])
+    state[3] = torch.tensor(yaw)
 
     return state
+
+def convert_sim_to_blender_pose(pose):
+    #Incoming pose converts body canonical frame to world canonical frame. We want a pose conversion from body
+    #sim frame to world sim frame.
+    world2sim = np.array([[1., 0., 0.],
+                        [0., 0., 1.],
+                        [0., -1., 0.]])
+    body2cam = world2sim
+    rot = pose[:3, :3]          #Rotation from body to world canonical
+    trans = pose[:3, 3]
+
+    rot_c2s = world2sim.T @ rot @ body2cam
+    trans_sim = world2sim.T @ trans
+
+    print('Trans', trans)
+    print('Trans sim', trans_sim)
+
+    c2w = np.zeros((4, 4))
+    c2w[:3, :3] = rot_c2s
+    c2w[:3, 3] = trans_sim
+    c2w[3, 3] = 1.
+
+    return c2w
 
 ####################### MAIN LOOP ##########################################
 def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter: int, savedir: str, render_args: dict, render_kwargs_train: dict, scene_dir: str) -> None:
@@ -108,8 +134,8 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         #end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0]).to(device)
 
         #Playground
-        start_state = torch.tensor([0, -0.8, 0.01, 0])
-        end_state   = torch.tensor([0,  0.9, 0.6 , 0])
+        start_state = torch.tensor([0., -0.8, 0.01, 0])
+        end_state   = torch.tensor([0.5,  0.9, 0.6 , 0])
 
         # stonehenge - tricky
         # start_state = torch.tensor([ 0.4 ,-0.9, 0.2, 0])
@@ -123,7 +149,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         cfg = {"T_final": 2,
                 "steps": 20,
                 "lr": 0.001,
-                "epochs_init": 2500,
+                "epochs_init": 250,
                 "fade_out_epoch": 500,
                 "fade_out_sharpness": 10,
                 "epochs_update": 500,
@@ -133,7 +159,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         #Planner should initialize with A*
         #Arguments: Initial Pose P0, final pose PT, Number of Time Steps T, Discretization of A* N
 
-        traj = System(renderer, start_state, end_state, start_vel, end_vel, cfg)
+        traj = System(get_manual_nerf("empty"), start_state, end_state, start_vel, end_vel, cfg)
         traj.learn_init()
         traj.plot()
 
@@ -147,7 +173,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         #TODO: MOVE AGENT CONFIG TO OUTSIDE
         agent_cfg = {'dt': cfg["T_final"]/cfg["steps"],
                     'mass': 1.,
-                    'g': 10,
+                    'g': 10.,
                     'I': torch.eye(3)}
 
         ###TODO: MAKE SURE YOU ALSO PASS IN SIMULATOR CONFIGS
@@ -159,26 +185,75 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         true_states = [x0]
         pose_estimates = []
 
-        #actions = traj.get_actions()
-        
-        #for action in actions:
-        #    true_pose = agent.step(action)
-        #    print(action, true_pose)
+        measured_states = []
 
-        
+        actions = traj.get_actions()
+
+        act = {}
+
+        act["actions"] = actions.cpu().detach().numpy().tolist()
+        with open('actions.json', 'w') as outfile:
+            json.dump(act, outfile)
+
         for iter in trange(1):
+            actions = traj.get_actions()
+
+            states = []
+            agent.reset()
+            for act in actions:
+                true_pose, true_state, gt_img = agent.step(act)
+                states.append(true_state)
+
+            true_state = states[iter + 2]
+            '''
+            if iter == 0:
+                true_pose, true_state, gt_img = agent.step(actions[0])
+                true_pose, true_state, gt_img = agent.step(actions[1])
+                true_pose, true_state, gt_img = agent.step(actions[2])
+            else:
+                #true_pose, true_state, gt_img = agent.step((actions[iter + 2] + actions[iter + 3])/2)
+                true_pose, true_state, gt_img = agent.step(actions[iter + 2])
+            '''
+
+            print('Action shape', actions.shape)
+
+            true_state = convert_pose_to_planner_state(true_state)
+            true_states.append(true_state)
+
+            measured_state = traj.states[0, :].detach()
+            measured_states.append(measured_state)
+
+            #print('Propagated next state', measured_state)
+            #print('Expected next state', traj.states[0])
+
+            traj.update_state( measured_state )
+            traj.learn_update()
+            traj.save_poses('paths/Step' + f'{iter} poses.json')
+            traj.plot()
+
+        print(true_states)
+        print(measured_states)
+        print(traj.get_states(), traj.get_states().shape)
+
+        '''
+
+        for iter in trange(cfg["steps"]):
 
             print(f'Iteration {iter}')
 
-            #action = traj.get_next_action()
-
-            #action = torch.tensor([12, 10, 10, 10])
-
-            #print('Action', action)
+            actions = traj.get_actions()
+            act = actions[iter]
 
             #Step based on recommended action. Action should be array, not tensor! Output true_pose and gt_img are arrays.
-            #true_pose, true_state, gt_img = agent.step(action)
-            #true_states.append(true_state)
+            true_pose, true_state, gt_img = agent.step(act)
+            true_states.append(true_state)
+
+            measured_state = convert_pose_to_planner_state(true_state)
+
+            traj.update_state( measured_state )
+            traj.learn_update()
+            traj.save_poses('paths/Step' + f'{iter} poses.json')
+            traj.plot()
 
             #plt.imsave('paths/traj_image.png', gt_img)
 
@@ -187,28 +262,46 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
             #Estimate pose from ground truth image initialized from above. Estimate_pose will print MSE loss and rotational & translational errors.
             #Assume inputs to estimate_pose are arrays.
 
-            #pose_estimate = estimator.estimate_pose(pose_init, gt_img, true_pose)
             #pose_estimates.append(pose_estimate)
 
             # Use planner dynamics as real dynamics + noise. The current state is once we've already taken an action.
-            current_state = traj.states[0, :].detach()
-            randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
+            #current_state = traj.states[0, :].detach()
+            #randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
+
+            #INERF WITH DYNAMICS
 
             states, vel, rot = traj.get_full_state()
 
-            print(states.shape)
-            print(vel.shape)
-            print(rot.shape)
+            pose_init = np.zeros((4,4))
+            pose_init[:3, :3] = rot[iter + 3]
+            pose_init[:3, 3] = states[iter + 3, :3]
+            pose_init[3, 3] = 1.
+
+            gt_img, nerf_pose = agent.step_planner_dynamics(pose_init)
+
+            plt.figure()
+            plt.imsave('./paths/gt_img.png', gt_img)
+
+            pose_estimate = estimator.estimate_pose(nerf_pose, gt_img, nerf_pose)
+
+            pose_estimate = convert_sim_to_blender_pose(pose_estimate)
 
             # True state
-            measured_state = current_state + randomness     
+            #measured_state = current_state + randomness     
 
-            print('Measured state', measured_state)
+            #print('Measured state', measured_state)
+
+            measured_state = convert_pose_to_planner_state(pose_estimate)
+
+            print('Difference Pose', pose_init, pose_estimate)
+
+            print('Difference yaw', states[iter + 1, 3], measured_state[3])
 
             traj.update_state( measured_state )
             traj.learn_update()
             traj.save_poses('paths/Step' + f'{iter} poses.json')
             traj.plot()
+            '''
 
         #Visualizes the trajectory
         with torch.no_grad():
