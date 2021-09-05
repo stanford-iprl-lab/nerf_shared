@@ -38,9 +38,22 @@ class Simulator:
         self.states = torch.cat( [self.states, state[None,:] ], dim=0 )
 
     @typechecked
+    def copy_states(self, states: TensorType["states", 18]):
+        self.states = states
+
+    @typechecked
     def advance(self, action: TensorType[4]):
         next_state = self.next_state(self.states[-1, :], action)
         self.states = torch.cat( [self.states, next_state[None,:] ], dim=0 )
+
+    @typechecked
+    def advance_smooth(self, action: TensorType[4]):
+        cur = self.states[-1, :]
+
+        for _ in range(5):
+            cur = self.next_state(cur, action, self.dt/5)
+
+        self.states = torch.cat( [self.states, cur[None,:] ], dim=0 )
 
     @typechecked
     def get_current_state(self) -> TensorType[18]:
@@ -59,9 +72,12 @@ class Simulator:
         return world_points.swapdims(-1,-2)
 
     @typechecked
-    def next_state(self, state: TensorType[18], action: TensorType[4]):
+    def next_state(self, state: TensorType[18], action: TensorType[4], dt = None):
         #State is 18 dimensional [pos(3), vel(3), R (9), omega(3)] where pos, vel are in the world frame, R is the rotation from points in the body frame to world frame
         # and omega are angular rates in the body frame
+        if dt == None:
+            dt = self.dt
+
         next_state = torch.zeros(18)
 
         #Actions are [total thrust, torque x, torque y, torque z]
@@ -85,7 +101,7 @@ class Simulator:
         domega = self.invI @ (tau - torch.cross(omega, self.I @ omega))
 
         # Propagate rotation matrix using exponential map of the angle displacements
-        angle = omega*self.dt
+        angle = omega*dt
         theta = torch.norm(angle, p=2)
         if theta == 0:
             exp_i = torch.eye(3)
@@ -98,12 +114,12 @@ class Simulator:
 
         next_R = R @ exp_i
 
-        next_state[0:3] = pos + v * self.dt
-        next_state[3:6] = v + dv * self.dt
+        next_state[0:3] = pos + v * dt
+        next_state[3:6] = v + dv * dt
 
         next_state[6:15] = next_R.reshape(-1)
 
-        next_state[15:] = omega + domega * self.dt
+        next_state[15:] = omega + domega * dt
 
         return next_state
 

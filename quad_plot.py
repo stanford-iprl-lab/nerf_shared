@@ -97,7 +97,7 @@ class System:
     def params(self):
         return [self.states]
 
-    @typechecked
+    # @typechecked
     def calc_everything(self) -> (
             TensorType["states", 3], #pos
             TensorType["states", 3], #vel
@@ -120,7 +120,7 @@ class System:
 
         current_pos = torch.cat( [start_pos, self.states[:, :3], end_pos], dim=0)
         prev_pos = current_pos[:-1, :]
-        next_pos = current_pos[:1 , :]
+        next_pos = current_pos[1: , :]
 
         midpoint_vel = (next_pos - prev_pos)/self.dt
 
@@ -185,7 +185,7 @@ class System:
     def get_next_action(self) -> TensorType[4]:
         actions = self.get_actions()
         # fz, tx, ty, tz
-        return actions[0, :]
+        return 2*actions[0, :]
 
     @typechecked
     def body_to_world(self, points: TensorType["batch", 3]) -> TensorType["states", "batch", 3]:
@@ -215,11 +215,11 @@ class System:
         #dynamics residual loss - make sure acceleration point in body frame z axis
         # S, 3          =    S, 3, 3           @ S, 3, _
         body_frame_accel = (rot_matrix.swapdims(-1,-2) @ accel[:, :, None])[:,:,0]
-        # only first and last needs constraining
-        dynamics_residual = torch.norm(body_frame_accel[0, :2]) + torch.norm(body_frame_accel[-1, :2])
+        # # only first and last needs constraining
+        dynamics_residual = torch.norm(body_frame_accel[0, :2]) + torch.norm(body_frame_accel[-1, :2])**2
 
         #PARAM cost function shaping
-        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 0 #10000 * dynamics_residual
+        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1000 * dynamics_residual
 
     def total_cost(self):
         total_cost, colision_loss, dynamics_residual = self.get_state_cost()
@@ -270,11 +270,28 @@ class System:
         quadplot.trajectory( self, "g" )
         ax = quadplot.ax_graph
 
-        actions = self.get_actions().detach().numpy() 
+        pos, vel, accel, _, omega, _, actions = self.calc_everything()
+        actions = actions.detach().numpy()
+        pos = pos.detach().numpy()
+        vel = vel.detach().numpy()
+        omega = omega.detach().numpy()
+
         ax.plot(actions[...,0], label="fz")
         ax.plot(actions[...,1], label="tx")
         ax.plot(actions[...,2], label="ty")
         ax.plot(actions[...,3], label="tz")
+
+        ax.plot(pos[...,0], label="px")
+        # ax.plot(pos[...,1], label="py")
+        # ax.plot(pos[...,2], label="pz")
+
+        ax.plot(vel[...,0], label="vx")
+        # ax.plot(vel[...,1], label="vy")
+        ax.plot(vel[...,2], label="vz")
+
+        # ax.plot(omega[...,0], label="omx")
+        ax.plot(omega[...,1], label="omy")
+        # ax.plot(omega[...,2], label="omz")
 
         ax_right = quadplot.ax_graph_right
 
@@ -302,8 +319,10 @@ def main():
     # stonehenge - simple
     start_pos = torch.tensor([-0.05,-0.9, 0.2])
     end_pos   = torch.tensor([-1 , 0.7, 0.05])
+    # start_pos = torch.tensor([-1, 0, 0.2])
+    # end_pos   = torch.tensor([ 1, 0, 0.5])
 
-    start_state = torch.cat( [start_pos, torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
+    start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
     renderer = get_manual_nerf("empty")
@@ -323,6 +342,9 @@ def main():
 
     sim = Simulator(start_state)
 
+    save = Simulator(start_state)
+    save.copy_states(traj.get_full_states())
+
     quadplot = QuadPlot()
     traj.plot(quadplot)
     quadplot.show()
@@ -330,37 +352,31 @@ def main():
 
     if True:
         for step in range(cfg['steps']):
-            # # idealy something like this but we jank it for now
-            # action = traj.get_actions()[0 or 1, :]
-
-            # action = traj.get_next_action()
+            action = traj.get_next_action()
             # action = traj.get_actions()[step,:]
+            print(action)
 
-            # current_state = next_state(action)
-
-            # action = traj.get_actions()[0 or 1, :]
-
-            # we jank it
-
-            current_state = traj.states[0, :].detach()
             sim.advance(action)
+            # sim.advance_smooth(action)
 
             # randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
-
             # measured_state = current_state + randomness
-            full_state = sim.get_current_state().detach()
 
-            traj.update_state( torch.cat([full_state[:3], torch.zeros(1)]) )
+            full_state = sim.get_current_state().detach()
+            traj.update_state(full_state)
 
 
             traj.learn_update()
-            # traj.save_poses(???)
+            # # traj.save_poses(???)
 
             print("sim step", step)
+            if step % 10 !=0:
+                continue
 
             quadplot = QuadPlot()
             traj.plot(quadplot)
             quadplot.trajectory( sim, "r" )
+            quadplot.trajectory( save, "b", show_cloud=False )
             quadplot.show()
 
 
