@@ -213,13 +213,22 @@ class System:
             colision_prob = colision_prob * mask
 
         #dynamics residual loss - make sure acceleration point in body frame z axis
-        # S, 3          =    S, 3, 3           @ S, 3, _
-        body_frame_accel = (rot_matrix.swapdims(-1,-2) @ accel[:, :, None])[:,:,0]
-        # # only first and last needs constraining
-        dynamics_residual = torch.norm(body_frame_accel[0, :2]) + torch.norm(body_frame_accel[-1, :2])**2
+        start_body_frame_accel = rot_matrix[0 ,:,:].T @ accel[0 ,:]
+        s_residue_angle = torch.atan2( (start_body_frame_accel[0]**2 + start_body_frame_accel[1]**2)**0.5, start_body_frame_accel[2])
+
+
+
+        end_body_frame_accel   = rot_matrix[-1 ,:,:].T @ accel[-1 ,:]
+        e_residue_angle = torch.atan2( (end_body_frame_accel[0]**2 + end_body_frame_accel[1]**2)**0.5, end_body_frame_accel[2])
+
+        # dynamics_residual = torch.norm(start_body_frame_accel[:2])**2  + \
+        #                     torch.norm(end_body_frame_accel[:2])**2 
+
+        dynamics_residual = s_residue_angle**2 + e_residue_angle**2
+
 
         #PARAM cost function shaping
-        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1000 * dynamics_residual
+        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1e6 * dynamics_residual
 
     def total_cost(self):
         total_cost, colision_loss, dynamics_residual = self.get_state_cost()
@@ -318,7 +327,7 @@ def main():
     # renderer = get_nerf('configs/stonehenge.txt')
     # stonehenge - simple
     start_pos = torch.tensor([-0.05,-0.9, 0.2])
-    end_pos   = torch.tensor([-1 , 0.7, 0.05])
+    end_pos   = torch.tensor([-1 , 0.7, 0.35])
     # start_pos = torch.tensor([-1, 0, 0.2])
     # end_pos   = torch.tensor([ 1, 0, 0.5])
 
@@ -333,7 +342,7 @@ def main():
             "epochs_init": 2500,
             "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
-            "epochs_update": 200,
+            "epochs_update": 500,
             }
 
     traj = System(renderer, start_state, end_state, cfg)
@@ -341,43 +350,46 @@ def main():
 
 
     sim = Simulator(start_state)
+    sim.dt = traj.dt
 
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())
 
-    quadplot = QuadPlot()
-    traj.plot(quadplot)
-    quadplot.show()
+    # quadplot = QuadPlot()
+    # traj.plot(quadplot)
+    # quadplot.show()
 
 
     if True:
         for step in range(cfg['steps']):
-            # action = traj.get_next_action()
-            action = traj.get_actions()[step,:]
+            action = traj.get_next_action()
+            # action = traj.get_actions()[step,:]
             print(action)
 
             sim.advance(action)
-            # sim.advance_smooth(action)
+            # sim.advance_smooth(action, 10)
 
-            # randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
-            # measured_state = current_state + randomness
+            # randomness = torch.normal(mean= 0, std=torch.tensor([0.02]*18) )
+            # measured_state = traj.get_full_states()[1,:].detach()
+            # sim.add_state(measured_state)
+            # measured_state += randomness
 
-            # full_state = sim.get_current_state().detach()
-            # traj.update_state(full_state)
+            measured_state = sim.get_current_state().detach()
+            traj.update_state(measured_state)
 
 
-            # traj.learn_update()
+            traj.learn_update()
             # # traj.save_poses(???)
 
             print("sim step", step)
-            # if step % 10 !=0:
-            #     continue
+            if step % 5 !=0 or step == 0:
+                continue
 
-        quadplot = QuadPlot()
-        traj.plot(quadplot)
-        quadplot.trajectory( sim, "r" )
-        quadplot.trajectory( save, "b", show_cloud=False )
-        quadplot.show()
+            quadplot = QuadPlot()
+            traj.plot(quadplot)
+            quadplot.trajectory( sim, "r" )
+            quadplot.trajectory( save, "b", show_cloud=False )
+            quadplot.show()
 
 
 

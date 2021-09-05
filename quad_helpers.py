@@ -47,11 +47,11 @@ class Simulator:
         self.states = torch.cat( [self.states, next_state[None,:] ], dim=0 )
 
     @typechecked
-    def advance_smooth(self, action: TensorType[4]):
+    def advance_smooth(self, action: TensorType[4], detail = 5):
         cur = self.states[-1, :]
 
-        for _ in range(5):
-            cur = self.next_state(cur, action, self.dt/5)
+        for _ in range(detail):
+            cur = self.next_state(cur, action, self.dt/detail)
 
         self.states = torch.cat( [self.states, cur[None,:] ], dim=0 )
 
