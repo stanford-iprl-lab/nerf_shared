@@ -74,6 +74,7 @@ class System:
                     slider  * self.full_to_reduced_state(end_state)
 
         self.states = states.clone().detach().requires_grad_(True)
+        self.initial_accel = torch.tensor([10.0,10.0]).requires_grad_(True)
 
         #PARAM this sets the shape of the robot body point cloud
         body = torch.stack( torch.meshgrid( torch.linspace(-0.05, 0.05, 10),
@@ -96,7 +97,7 @@ class System:
 
 
     def params(self):
-        return [self.states]
+        return [self.initial_accel, self.states]
 
     # @typechecked
     def calc_everything(self) -> (
@@ -123,7 +124,18 @@ class System:
         next_pos = start_pos + start_v * self.dt
         last_pos = end_pos   - end_v * self.dt
 
-        current_pos = torch.cat( [start_pos, next_pos, self.states[:, :3], last_pos, end_pos], dim=0)
+        next_R = next_rotation(start_R, start_omega, self.dt)
+
+        start_accel = start_R @ torch.tensor([0,0,1.0]) * self.initial_accel[0] + self.g
+        next_accel = next_R @ torch.tensor([0,0,1.0]) * self.initial_accel[1] + self.g
+
+        next_vel = start_v + start_accel * self.dt
+        after_next_pos = next_pos + next_vel * self.dt
+
+        after_next_vel = next_vel + next_accel * self.dt
+        after2_next_pos = after_next_pos + after_next_vel * self.dt
+    
+        current_pos = torch.cat( [start_pos, next_pos, after_next_pos, after2_next_pos, self.states[2:, :3], last_pos, end_pos], dim=0)
 
         prev_pos = current_pos[:-1, :]
         next_pos = current_pos[1: , :]
@@ -156,7 +168,7 @@ class System:
         # S, 3, 3 # assembled manually from basis vectors
         rot_matrix = torch.stack( [x_axis_body, y_axis_body, z_axis_body], dim=-1)
 
-        next_R = next_rotation(start_R, start_omega, self.dt)
+        # next_R = next_rotation(start_R, start_omega, self.dt)
         last_R = next_rotation(end_R, end_omega, -self.dt)
 
         rot_matrix = torch.cat( [start_R, next_R, rot_matrix, last_R, end_R], dim=0)
@@ -233,10 +245,10 @@ class System:
         residue_angle = residue_angle[ torch.tensor([0,1, -3, -2,-1]) ]
         self.max_residual = torch.max( torch.abs(residue_angle) )
 
-        dynamics_residual = torch.mean( (torch.abs(residue_angle) > 1e-3 )  * torch.abs(residue_angle)**2 )
+        dynamics_residual = torch.mean( torch.abs(residue_angle)**2 )
 
         #PARAM cost function shaping
-        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1e4 * dynamics_residual
+        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 0# 1e5 * dynamics_residual
 
     def total_cost(self):
         total_cost, colision_loss, dynamics_residual = self.get_state_cost()
@@ -354,7 +366,7 @@ def main():
     start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
-    renderer = get_manual_nerf("cylinder")
+    renderer = get_manual_nerf("empty")
 
     cfg = {"T_final": 2,
             "steps": 20,
@@ -366,8 +378,8 @@ def main():
             }
 
     traj = System(renderer, start_state, end_state, cfg)
-    # traj.learn_init()
-    traj.load_progress("quad_train.pt")
+    traj.learn_init()
+    # traj.load_progress("quad_train.pt")
 
 
     sim = Simulator(start_state)
@@ -380,35 +392,35 @@ def main():
     traj.plot(quadplot)
     quadplot.show()
 
-    traj.save_progress("quad_train.pt")
+    # traj.save_progress("quad_train.pt")
 
     if True:
         for step in range(cfg['steps']):
-            # action = traj.get_actions()[step,:]
-            # print(action)
-            # sim.advance(action)
-
-            action = traj.get_next_action().clone().detach()
+            action = traj.get_actions()[step,:]
             print(action)
+            sim.advance(action)
 
-            sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
-            measured_state = sim.get_current_state().clone().detach()
+            # action = traj.get_next_action().clone().detach()
+            # print(action)
 
-            # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + torch.zeros( ( ) ) )
-            # measured_state += randomness
-            traj.update_state(measured_state) 
+            # sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
+            # measured_state = sim.get_current_state().clone().detach()
 
-            traj.learn_update()
+            # # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + torch.zeros( ( ) ) )
+            # # measured_state += randomness
+            # traj.update_state(measured_state) 
 
-            print("sim step", step)
-            if step % 10 !=0 or step == 0:
-                continue
+            # traj.learn_update()
 
-            quadplot = QuadPlot()
-            traj.plot(quadplot)
-            quadplot.trajectory( sim, "r" )
-            quadplot.trajectory( save, "b", show_cloud=False )
-            quadplot.show()
+            # print("sim step", step)
+            # if step % 10 !=0 or step == 0:
+            #     continue
+
+            # quadplot = QuadPlot()
+            # traj.plot(quadplot)
+            # quadplot.trajectory( sim, "r" )
+            # quadplot.trajectory( save, "b", show_cloud=False )
+            # quadplot.show()
 
             # # traj.save_poses(???)
             # sim.advance_smooth(action, 10)
