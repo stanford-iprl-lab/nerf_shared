@@ -231,11 +231,12 @@ class System:
             # raise False
 
         residue_angle = residue_angle[ torch.tensor([0,1, -3, -2,-1]) ]
+        self.max_residual = torch.max( torch.abs(residue_angle) )
 
-        dynamics_residual = torch.mean( torch.abs(residue_angle)**2 )
+        dynamics_residual = torch.mean( (torch.abs(residue_angle) > 1e-3 )  * torch.abs(residue_angle)**2 )
 
         #PARAM cost function shaping
-        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1e5 * dynamics_residual
+        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1e4 * dynamics_residual
 
     def total_cost(self):
         total_cost, colision_loss, dynamics_residual = self.get_state_cost()
@@ -264,6 +265,8 @@ class System:
     def learn_update(self):
         opt = torch.optim.Adam(self.params(), lr=self.lr)
 
+        # it = 0
+        # while 1:
         for it in range(self.epochs_update):
             opt.zero_grad()
             self.epoch = it
@@ -271,6 +274,10 @@ class System:
             print(it, loss)
             loss.backward()
             opt.step()
+            # it += 1
+
+            # if (it > self.epochs_update and self.max_residual < 1e-3):
+            #     break
 
             # save_step = 50
             # if it%save_step == 0:
@@ -359,8 +366,8 @@ def main():
             }
 
     traj = System(renderer, start_state, end_state, cfg)
-    traj.learn_init()
-    # traj.load_progress("quad_train.pt")
+    # traj.learn_init()
+    traj.load_progress("quad_train.pt")
 
 
     sim = Simulator(start_state)
