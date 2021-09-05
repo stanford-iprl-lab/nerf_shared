@@ -170,10 +170,10 @@ class System:
         # return pos, current_vel, rot_matrix, angular_rate, 
         return rot_matrix, z_accel, current_vel
 
-    def get_next_action(self) -> TensorType[1,"state_dim"]:
+    def get_next_action(self) -> TensorType["state_dim"]:
         actions = self.get_actions()
         # fz, tx, ty, tz
-        return actions[0, None, :]
+        return actions[0, :]
 
     def get_full_state(self):
         rot_matrix, z_accel, current_vel = self.get_rots_and_accel()
@@ -274,11 +274,6 @@ class System:
         ax.plot(actions[...,2], label="ty")
         ax.plot(actions[...,3], label="tz")
 
-        # states = self.states.detach().numpy()
-        # ax.plot(states[...,0], label="px")
-        # ax.plot(states[...,4], label="vx")
-        # ax.plot(states[...,7], label="ey")
-
         ax_right = quadplot.ax_graph_right
 
         total_cost, colision_loss = self.get_cost()
@@ -307,7 +302,7 @@ def main():
     # renderer = get_nerf('configs/stonehenge.txt')
     # stonehenge - simple
     start_pos = torch.tensor([-0.05,-0.9, 0.2])
-    end_pos   = torch.tensor([-0.2 , 0.7, 0.15])
+    end_pos   = torch.tensor([-1 , 0.7, 0.05])
 
     start_state = torch.cat( [start_pos, torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
@@ -328,8 +323,8 @@ def main():
 
 
     sim = Simulator(start_state)
-    quadplot = QuadPlot()
 
+    quadplot = QuadPlot()
     traj.plot(quadplot)
     quadplot.show()
 
@@ -338,31 +333,35 @@ def main():
         for step in range(cfg['steps']):
             # # idealy something like this but we jank it for now
             # action = traj.get_actions()[0 or 1, :]
+
+            # action = traj.get_next_action()
+            action = traj.get_actions()[step,:]
+
+            sim.advance(action)
             # current_state = next_state(action)
 
             # action = traj.get_actions()[0 or 1, :]
 
             # we jank it
-            print(traj.states.shape)
 
-            current_state = traj.states[0, :].detach()
-            randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
+            # current_state = traj.states[0, :].detach()
+            # randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
 
-            measured_state = current_state + randomness
-            traj.update_state( measured_state )
+            # measured_state = current_state + randomness
+            # traj.update_state( current_state )
 
 
             # traj.learn_update()
             # traj.save_poses(???)
 
-            quadplot = QuadPlot()
-            traj.plot(quadplot)
-
-            quadplot.trajectory( sim, "r" )
-            quadplot.show()
-
-
             print("sim step", step)
+
+        quadplot = QuadPlot()
+        traj.plot(quadplot)
+        quadplot.trajectory( sim, "r" )
+        quadplot.show()
+
+
 
     #PARAM file to save the trajectory
     # traj.save_poses("paths/playground_testing.json")
