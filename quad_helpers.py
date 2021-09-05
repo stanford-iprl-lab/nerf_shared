@@ -202,8 +202,19 @@ class QuadPlot:
         plt.show()
 
 
+def next_rotation(R: TensorType[3,3], omega: TensorType[3], dt) -> TensorType[3,3]:
+    # Propagate rotation matrix using exponential map of the angle displacements
+    angle = omega*dt
+    theta = torch.norm(angle, p=2)
+    if theta == 0:
+        exp_i = torch.eye(3)
+    else:
+        exp_i = torch.eye(3)
+        angle_norm = angle/theta
+        K = skew_matrix(angle_norm)
+        exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
 
-
+    next_R = R @ exp_i
 
 def astar(occupied, start, goal):
     def heuristic(a, b):

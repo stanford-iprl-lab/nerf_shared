@@ -20,7 +20,7 @@ torch.manual_seed(0)
 np.random.seed(0)
 
 from quad_helpers import Simulator, QuadPlot
-from quad_helpers import rot_matrix_to_vec, vec_to_rot_matrix
+from quad_helpers import rot_matrix_to_vec, vec_to_rot_matrix, next_rotation
 
 # # hard coded "nerf" for testing. see below to import real nerf
 def get_manual_nerf(name):
@@ -118,23 +118,24 @@ class System:
         end_R     = self.end_state[6:15].reshape((1, 3, 3))
         end_omega = self.end_state[None, 15:]
 
-        current_pos = torch.cat( [start_pos, self.states[:, :3], end_pos], dim=0)
+        # start, next, decision_states, last, end
+        next_pos = start_pos + start_v * self.dt
+        last_pos = end_pos   - end_v * self.dt
+
+        current_pos = torch.cat( [start_pos, next_pos, self.states[:, :3], last_pos, end_pos], dim=0)
+
         prev_pos = current_pos[:-1, :]
         next_pos = current_pos[1: , :]
 
-        midpoint_vel = (next_pos - prev_pos)/self.dt
+        current_vel = (next_pos - prev_pos)/self.dt
+        current_vel = torch.cat( [ current_vel, end_v], dim=0)
 
-        # reverse of averaging midpoint to get real value
-        prestart_vel = 2*start_v - midpoint_vel[0,None,:]
-        postend_vel  = 2*end_v   - midpoint_vel[-1,None,:]
-
-        midpoint_vel = torch.cat( [ prestart_vel, midpoint_vel, postend_vel], dim=0)
-        prev_vel = midpoint_vel[:-1, :]
-        next_vel = midpoint_vel[1:, :]
-
-        current_vel = (next_vel + prev_vel)/2
+        prev_vel = current_vel[:-1, :]
+        next_vel = current_vel[1: , :]
 
         current_accel = (next_vel - prev_vel)/self.dt - self.g
+
+        current_accel = torch.cat( [ current_accel, current_accel[-1,None,:] ], dim=0)
 
         accel_mag     = torch.norm(current_accel, dim=-1, keepdim=True)
 
@@ -142,7 +143,7 @@ class System:
         z_axis_body = current_accel/accel_mag
 
         # remove first and last state - we already have their rotations constrained
-        z_axis_body = z_axis_body[1:-1, :]
+        z_axis_body = z_axis_body[2:-2, :]
 
         z_angle = self.states[:,3]
         in_plane_heading = torch.stack( [torch.sin(z_angle), -torch.cos(z_angle), torch.zeros_like(z_angle)], dim=-1)
@@ -153,20 +154,20 @@ class System:
 
         # S, 3, 3 # assembled manually from basis vectors
         rot_matrix = torch.stack( [x_axis_body, y_axis_body, z_axis_body], dim=-1)
-        rot_matrix = torch.cat( [start_R, rot_matrix, end_R], dim=0)
 
-        midpoint_omega = rot_matrix_to_vec( rot_matrix[1:, ...] @ rot_matrix[:-1, ...].swapdims(-1,-2) ) / self.dt
+        next_R = next_rotation(start_R, start_omega, self.dt)
+        last_R = next_rotation(end_R, end_omega, -self.dt)
 
-        # reverse of averaging midpoint to get real value
-        prestart_omega = 2*start_omega - midpoint_omega[0,None,:]
-        postend_omega  = 2*end_omega   - midpoint_omega[-1,None,:]
+        rot_matrix = torch.cat( [start_R, next_R, rot_matrix, last_R, end_R], dim=0)
 
-        midpoint_omega = torch.cat( [ prestart_omega, midpoint_omega, postend_omega], dim=0)
+        current_omega = rot_matrix_to_vec( rot_matrix[1:, ...] @ rot_matrix[:-1, ...].swapdims(-1,-2) ) / self.dt
+        current_vel = torch.cat( [ current_omega, end_omega], dim=0)
+
         prev_omega = midpoint_omega[:-1, :]
         next_omega = midpoint_omega[1:, :]
 
-        current_omega = (next_omega + prev_omega)/2
         angular_accel = (next_omega - prev_omega)/self.dt
+        angular_accel = torch.cat( [ angular_accel, angular_accel[-1,None,:] ], dim=0)
 
         # S, 3    3,3      S, 3, 1
         torques = (self.J @ angular_accel[...,None])[...,0]
