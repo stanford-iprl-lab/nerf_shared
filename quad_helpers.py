@@ -387,7 +387,7 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
 
     trace = torch.diagonal(R, dim1=-2, dim2=-1).sum(-1)
 
-    def acos_safe(x, eps=1e-4):
+    def acos_safe(x, eps=1e-6):
         """https://github.com/pytorch/pytorch/issues/8069"""
         slope = np.arccos(1-eps) / eps
         # TODO: stop doing this allocation once sparse gradients with NaNs (like in
@@ -405,7 +405,7 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
 
     vec = (
         1
-        / (2 * torch.sin(angle + 1e-5))
+        / (2 * torch.sin(angle + 1e-10))
         * torch.stack(
             [
                 R[..., 2, 1] - R[..., 1, 2],
@@ -429,7 +429,8 @@ def vec_to_rot_matrix(rot_vec: TensorType["batch":..., 3]) -> TensorType["batch"
     assert not torch.any(torch.isnan(rot_vec))
 
     angle = torch.norm(rot_vec, dim=-1, keepdim=True)
-    axis = rot_vec / (1e-5 + angle)
+
+    axis = rot_vec / (1e-10 + angle)
     S = skew_matrix(axis)
     # print(S.shape)
     # print(angle.shape)

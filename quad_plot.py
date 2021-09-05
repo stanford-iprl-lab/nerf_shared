@@ -99,7 +99,7 @@ class System:
     def params(self):
         return [self.initial_accel, self.states]
 
-    # @typechecked
+    @typechecked
     def calc_everything(self) -> (
             TensorType["states", 3], #pos
             TensorType["states", 3], #vel
@@ -391,8 +391,8 @@ def main():
 
     traj = System(renderer, start_state, end_state, cfg)
     traj.learn_init()
-    filename = "quad_cylinder_train.pt"
-    # filename = "quad_train.pt"
+    # filename = "quad_cylinder_train.pt"
+    filename = "quad_train.pt"
     # traj.load_progress(filename)
 
 
