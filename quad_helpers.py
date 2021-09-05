@@ -215,6 +215,7 @@ def next_rotation(R: TensorType[3,3], omega: TensorType[3], dt) -> TensorType[3,
         exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
 
     next_R = R @ exp_i
+    return next_R
 
 def astar(occupied, start, goal):
     def heuristic(a, b):

@@ -161,10 +161,10 @@ class System:
         rot_matrix = torch.cat( [start_R, next_R, rot_matrix, last_R, end_R], dim=0)
 
         current_omega = rot_matrix_to_vec( rot_matrix[1:, ...] @ rot_matrix[:-1, ...].swapdims(-1,-2) ) / self.dt
-        current_vel = torch.cat( [ current_omega, end_omega], dim=0)
+        current_omega = torch.cat( [ current_omega, end_omega], dim=0)
 
-        prev_omega = midpoint_omega[:-1, :]
-        next_omega = midpoint_omega[1:, :]
+        prev_omega = current_omega[:-1, :]
+        next_omega = current_omega[1:, :]
 
         angular_accel = (next_omega - prev_omega)/self.dt
         angular_accel = torch.cat( [ angular_accel, angular_accel[-1,None,:] ], dim=0)
@@ -219,10 +219,14 @@ class System:
         # s_residue_angle = torch.atan2( (start_body_frame_accel[0]**2 + start_body_frame_accel[1]**2)**0.5, start_body_frame_accel[2])
 
         # S, 3, _     =   S, 3, 3  @ S, 3, _
+        # print(accel)
         body_frame_accel   = ( rot_matrix[-1 ,:,:].swapdims(-1,-2) @ accel[:,:,None]) [:,:,0]
+        # print(body_frame_accel)
         # pick out the ones we want to constrain (the rest are already constrained
-        body_frame_accel = [ torch.tensor([0,1, -2,-1]), :]
-        residue_angle = torch.atan2( (end_body_frame_accel[:,0]**2 + end_body_frame_accel[:,1]**2)**0.5, end_body_frame_accel[:,2])
+        body_frame_accel = body_frame_accel[ torch.tensor([0,1, -2,-1]), :]
+        # residue_angle = torch.atan2( (body_frame_accel[:,0]**2 + body_frame_accel[:,1]**2)**0.5, body_frame_accel[:,2])
+        residue_angle = torch.atan2( torch.norm(body_frame_accel[:,:2]) , body_frame_accel[:,2])
+        # print(residue_angle)
         dynamics_residual = torch.mean( residue_angle**2 )
 
         #PARAM cost function shaping
@@ -360,8 +364,8 @@ def main():
 
     if True:
         for step in range(cfg['steps']):
-            action = traj.get_next_action()
-            # action = traj.get_actions()[step,:]
+            # action = traj.get_next_action()
+            action = traj.get_actions()[step,:]
             print(action)
 
             sim.advance(action)
@@ -372,22 +376,22 @@ def main():
             # sim.add_state(measured_state)
             # measured_state += randomness
 
-            measured_state = sim.get_current_state().detach()
-            traj.update_state(measured_state)
+            # measured_state = sim.get_current_state().detach()
+            # traj.update_state(measured_state)
 
 
-            traj.learn_update()
+            # traj.learn_update()
             # # traj.save_poses(???)
 
             print("sim step", step)
-            if step % 5 !=0 or step == 0:
-                continue
+            # if step % 5 !=0 or step == 0:
+            #     continue
 
-            quadplot = QuadPlot()
-            traj.plot(quadplot)
-            quadplot.trajectory( sim, "r" )
-            quadplot.trajectory( save, "b", show_cloud=False )
-            quadplot.show()
+        quadplot = QuadPlot()
+        traj.plot(quadplot)
+        quadplot.trajectory( sim, "r" )
+        quadplot.trajectory( save, "b", show_cloud=False )
+        quadplot.show()
 
 
 
