@@ -23,6 +23,7 @@ from estimator_helpers import Estimator
 from agent_helpers import Agent
 from quad_plot import System
 from quad_plot import get_manual_nerf
+from planner import Planner
 
 DEBUG = False
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -134,8 +135,9 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         #end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0]).to(device)
 
         #Playground
-        start_state = torch.tensor([0., -0.8, 0.01, 0])
-        end_state   = torch.tensor([0.5,  0.9, 0.6 , 0])
+        start_state = torch.tensor([0.0, -0.8, 0.01, 0])
+        end_state   = torch.tensor([0.0,  3, 0.6 , 0])
+        #end_state   = torch.tensor([-0.5,  1., 0.6 , 0])
 
         # stonehenge - tricky
         # start_state = torch.tensor([ 0.4 ,-0.9, 0.2, 0])
@@ -149,7 +151,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         cfg = {"T_final": 2,
                 "steps": 20,
                 "lr": 0.001,
-                "epochs_init": 250,
+                "epochs_init": 1,
                 "fade_out_epoch": 500,
                 "fade_out_sharpness": 10,
                 "epochs_update": 500,
@@ -159,9 +161,59 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         #Planner should initialize with A*
         #Arguments: Initial Pose P0, final pose PT, Number of Time Steps T, Discretization of A* N
 
-        traj = System(get_manual_nerf("empty"), start_state, end_state, start_vel, end_vel, cfg)
+        traj = System(renderer, start_state, end_state, start_vel, end_vel, cfg)
         traj.learn_init()
         traj.plot()
+
+        actions = traj.get_actions()
+
+        act = {}
+
+        act["actions"] = actions.cpu().detach().numpy().tolist()
+        with open('actions.json', 'w') as outfile:
+            json.dump(act, outfile)
+
+        plan_cfg = {"T_final": 2,
+                "steps": 20,
+                "lr": 0.1,
+                "epochs_init": 2500,
+                "fade_out_epoch": 500,
+                "fade_out_sharpness": 10,
+                "epochs_update": 500,
+                'x_length': 0.1,
+                'y_length': 0.1,
+                'z_length': 0.05,
+                'cloud_density': 1000,
+                'mass': 1.,
+                'g': 10.,
+                'I': torch.eye(3)
+                }
+
+        start_pose = torch.zeros(18)
+        end_pose = torch.zeros(18)
+
+        start_pose[:3] = start_state[:3]
+        end_pose[:3]   = end_state[:3]
+
+        start_pose[6:15] = torch.eye(3).reshape(-1)
+        end_pose[6:15] = torch.eye(3).reshape(-1)
+
+        drone_planner = Planner(renderer, start_pose, end_pose, plan_cfg)
+
+        with open('actions.json', 'r') as fp:
+            meta = json.load(fp)
+            actions = meta["actions"]
+
+        init_actions = torch.tensor(actions[:20])
+
+        #print(init_actions)
+
+        proj_states, action_planner = drone_planner.plan_traj(start_pose, init_actions)
+
+        print('Projected states', proj_states)
+        print('Actions Planner', action_planner)
+
+        '''
 
         #Convert planner poses into states
         x0 = convert_planner_init_to_agent_init(start_state, start_vel)
@@ -205,7 +257,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
                 states.append(true_state)
 
             true_state = states[iter + 2]
-            '''
+
             if iter == 0:
                 true_pose, true_state, gt_img = agent.step(actions[0])
                 true_pose, true_state, gt_img = agent.step(actions[1])
@@ -213,7 +265,6 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
             else:
                 #true_pose, true_state, gt_img = agent.step((actions[iter + 2] + actions[iter + 3])/2)
                 true_pose, true_state, gt_img = agent.step(actions[iter + 2])
-            '''
 
             print('Action shape', actions.shape)
 
@@ -234,8 +285,6 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         print(true_states)
         print(measured_states)
         print(traj.get_states(), traj.get_states().shape)
-
-        '''
 
         for iter in trange(cfg["steps"]):
 
@@ -302,12 +351,6 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
             traj.save_poses('paths/Step' + f'{iter} poses.json')
             traj.plot()
             '''
-
-        #Visualizes the trajectory
-        with torch.no_grad():
-            pass
-            #visualize(background_pose, true_poses, pose_estimates, savedir, render_args, render_kwargs_train)
-
 
     else:
         ####################################### DEBUGING ENVIRONMENT ####################################################3

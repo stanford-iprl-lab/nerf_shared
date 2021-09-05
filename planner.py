@@ -149,6 +149,12 @@ class Planner:
         self.cloud_density = cfg['cloud_density']
         self.cloud_density_per_axis = math.floor(self.cloud_density**(1/3))
 
+        #System properties
+        self.mass = cfg['mass']
+        self.g = cfg['g']
+        self.I = cfg['I']
+        self.invI = torch.inverse(self.I)
+
         self.dt = self.T_final / self.steps
 
         self.start_pose = start_pose
@@ -159,74 +165,79 @@ class Planner:
         self.end_state_penalty = 1000
         self.thrust_penalty = 1
         self.torque_penalty = .1
-        self.density_penalty = 1e6
+        self.density_penalty = 1e3
 
         #PARAM this sets the shape of the robot body point cloud
         body = torch.stack( torch.meshgrid( torch.linspace(-self.x_length/2, self.x_length/2, self.cloud_density_per_axis),
                                             torch.linspace(-self.y_length/2, self.y_length/2, self.cloud_density_per_axis),
-                                            torch.linspace(-self.z_length/2, self.z_length/2, self.cloud_density_per_axis)), dim=-1)
+                                            torch.linspace(-self.z_length/2, self.z_length/2, self.cloud_density_per_axis)), dim=-1).to(device)
         self.robot_body = body.reshape(-1, 3)
 
         print('Body', self.robot_body.shape, self.robot_body)
 
     def dynamics(self, state_now, action):
-            #State is 18 dimensional [pos(3), vel(3), R (9), omega(3)] where pos, vel are in the world frame, R is the rotation from points in the body frame to world frame
-            # and omega are angular rates in the body frame
+        #State is 18 dimensional [pos(3), vel(3), R (9), omega(3)] where pos, vel are in the world frame, R is the rotation from points in the body frame to world frame
+        # and omega are angular rates in the body frame
 
-            #Actions are [total thrust, torque x, torque y, torque z]
-            fz = action[0]
-            tau = action[1:]
+        #Actions are [total thrust, torque x, torque y, torque z]
+        fz = action[0]
+        tau = action[1:]
 
-            state = state_now.clone()
+        state = state_now.clone()
 
-            #Define state vector
-            pos = state[0:3]
-            v   = state[3:6]
-            R_flat = state[6:15]
-            R = R_flat.reshape((3, 3))
-            omega = state[15:]
+        #Define state vector
+        pos = state[0:3]
+        v   = state[3:6]
+        R_flat = state[6:15]
+        R = R_flat.reshape((3, 3))
+        omega = state[15:]
 
-            # The acceleration
-            sum_action = torch.zeros(3)
-            sum_action[2] = fz
+        # The acceleration
+        sum_action = torch.zeros(3)
+        sum_action[2] = fz
 
-            grav = torch.tensor([0,0,-self.mass*self.g])
+        grav = torch.tensor([0,0,-self.mass*self.g])
 
-            # The angular accelerations
-            domega = self.invI @ (tau - torch.cross(omega, self.I @ omega))
+        dv = (grav + R @ sum_action)/self.mass
 
-            # Propagate rotation matrix using exponential map of the angle displacements
-            angle = omega*self.dt
-            theta = torch.norm(angle, p=2)
-            if theta == 0:
-                exp_i = torch.eye(3)
-            else:
-                angle_norm = angle/theta
-                K = vec2ss_matrix(angle_norm)
+        # The angular accelerations
+        domega = self.invI @ (tau - torch.cross(omega, self.I @ omega))
 
-                exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
+        # Propagate rotation matrix using exponential map of the angle displacements
+        angle = omega*self.dt
+        theta = torch.norm(angle, p=2)
+        if theta == 0:
+            exp_i = torch.eye(3)
+        else:
+            angle_norm = angle/theta
+            K = vec2ss_matrix(angle_norm)
 
-            next_R = R @ exp_i
+            exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
 
-            dv = (grav + next_R @ sum_action)/self.mass
+        next_R = R @ exp_i
 
-            next_pos = pos + v * self.dt
-            next_vel = v + dv * self.dt
+        next_pos = pos + v * self.dt
+        next_vel = v + dv * self.dt
 
-            next_rot = next_R.reshape(-1)
+        next_rot = next_R.reshape(-1)
 
-            next_omega = omega + domega * self.dt
+        next_omega = omega + domega * self.dt
 
-            return torch.hstack((next_pos, next_vel, next_rot, next_omega))
+        return torch.hstack((next_pos, next_vel, next_rot, next_omega))
 
-    def plan_traj(self, state_estimate, init_actions):
+    def plan_traj(self, state_estimate, init_actions, update=False):
 
         #Initialize path module
         starting_pose = torch.Tensor(state_estimate)
-        path_propagation = path(init_actions, self.steps, 1., 10., torch.eye(3), self.dt)
+        path_propagation = path(init_actions, self.steps, self.mass, self.g, self.I, self.dt)
         optimizer = torch.optim.Adam(params=path_propagation.parameters(), lr=self.lr, betas=(0.9, 0.999))
 
-        for it in range(self.epochs_init):
+        if update == True:
+            num_iter = self.epochs_update
+        else:
+            num_iter = self.epochs_init
+
+        for it in range(num_iter):
             optimizer.zero_grad()
             t1 = time.time()
             projected_states, actions = path_propagation(starting_pose)
@@ -242,14 +253,19 @@ class Planner:
             if it % 20 == 0:
                 print('Iteration', it)
                 print(projected_states[-1])
-                print('Loss', loss)
+                print('Loss', loss, loss.device)
 
             new_lrate = self.lr * (0.8 ** ((it + 1) / self.epochs_init))
             for param_group in optimizer.param_groups:
                 param_group['lr'] = new_lrate
             #print('Backprop', t3-t2)
 
-        return projected_states, actions
+            if it % 100 == 0:
+                self.save_poses(projected_states.cpu().detach().numpy(), './paths/drone_pose' + f'{it}.json')
+
+        self.plot_trajectory(projected_states)
+
+        return projected_states.detach(), actions.detach()
 
     def get_loss(self, states, actions):
         density_loss = self.get_density_loss(states)
@@ -257,6 +273,8 @@ class Planner:
         action_loss = self.get_action_loss(actions)
 
         loss = density_loss + state_loss + action_loss
+
+        #print('Losses', density_loss, state_loss, action_loss)
 
         return loss
 
@@ -274,19 +292,19 @@ class Planner:
         points_in_body_frame = self.robot_body
 
         #Convert to homogenous coordinates
-        points_in_body_frame = torch.cat((points_in_body_frame, torch.ones((points_in_body_frame.shape[0], 1))), -1)
+        points_in_body_frame = torch.cat((points_in_body_frame, torch.ones((points_in_body_frame.shape[0], 1)).to(device)), -1)
 
         #TODO: Check to see if this gives intended result
         body2worldrot = states[:, 6:15].reshape(-1, 3, 3)
         body2worldtrans = states[:, :3].reshape(-1, 3, 1)
-        body2worldpose = torch.cat((body2worldrot, body2worldtrans), -1)
+        body2worldpose = torch.cat((body2worldrot, body2worldtrans), -1).to(device)
 
         points_in_world_frame = body2worldpose @ points_in_body_frame.T
         points_in_world_frame = points_in_world_frame.permute(0, 2, 1)
 
-        densities = (self.nerf(points_in_world_frame))**2
+        densities = ((self.nerf(points_in_world_frame))**2).to(device)
 
-        distances = torch.norm(next_states[1:,:] - prev_states[:-1,:], dim=1, p=2)
+        distances = torch.norm(next_states[1:,:3] - prev_states[:-1,:3], dim=1, p=2).to(device)
 
         colision_prob =  densities * distances[..., None].expand(*densities.shape)
         colision_prob = torch.mean(colision_prob, dim=1)
@@ -304,11 +322,11 @@ class Planner:
         return density_loss
 
     def get_state_loss(self, states):
-        #offsets = states - self.end_pose.expand(self.steps, -1)
+        offsets = states - self.end_pose.expand(self.steps, -1)
 
         #state_loss = torch.sum(torch.norm(offsets, dim=1))
 
-        state_loss = torch.mean((torch.norm(states[1:, ...] - states[:-1, ...], dim=1, p=2))**2)
+        state_loss = torch.mean((torch.norm(states[1:, ...] - states[:-1, ...], dim=1, p=2))**2) + 10*torch.mean(torch.norm(offsets, dim=1, p=2)**2)
 
         state_loss = state_loss +  self.end_state_penalty *  (torch.norm(states[-1,...] - self.end_pose, p=2))**2
 
@@ -322,18 +340,64 @@ class Planner:
 
         return action_loss
 
-renderer = get_manual_nerf("empty")
+    def plot_trajectory(self, states):
+        x = states[:, 0].cpu().detach().numpy()
+        y = states[:, 1].cpu().detach().numpy()
+        z = states[:, 2].cpu().detach().numpy()
+
+        t = np.linspace(0, 2*np.pi, 100)
+
+        xcyl = math.sqrt(2)*np.sin(t)
+
+        ycyl = math.sqrt(2)*(np.cos(t) + 1)
+
+        Xcyl, Ycyl = np.meshgrid(xcyl, ycyl)
+
+        Zcyl = np.ones((100, 100))
+
+        ax = plt.axes(projection='3d')
+
+        ax.scatter3D(x, y, z, c=z, cmap='Greens')
+
+        ax.contour3D(Xcyl, Ycyl, Zcyl, 50, cmap='binary')
+
+        plt.show()
+        plt.close()
+
+        return
+
+    def save_poses(self, states, filename):
+        pose_dict = {}
+        poses = []
+        for state in states:
+            body2world = state[6:15].reshape((3, 3))
+            trans = state[:3]
+            pose = np.eye(4)
+            pose[:3, :3] = body2world
+            pose[:3, 3] = trans
+            poses.append(pose.tolist())
+
+        pose_dict["poses"] = poses
+        with open(filename,"w+") as f:
+            json.dump(pose_dict, f)
+
+        return
+
+renderer = get_manual_nerf("cylinder")
 cfg = {"T_final": 2,
         "steps": 20,
         "lr": 0.1,
-        "epochs_init": 500,
+        "epochs_init": 2500,
         "fade_out_epoch": 500,
         "fade_out_sharpness": 10,
         "epochs_update": 500,
         'x_length': 0.1,
         'y_length': 0.1,
         'z_length': 0.05,
-        'cloud_density': 1000
+        'cloud_density': 1000,
+        'mass': 1.,
+        'g': 10.,
+        'I': torch.eye(3)
         }
 
 if __name__ == "__main__":
@@ -342,7 +406,7 @@ if __name__ == "__main__":
     #end_pose[:3] = torch.ones(3)
 
     start_pose[:3] = torch.tensor([0., -0.8, 0.01])
-    end_pose[:3]   = torch.tensor([0.5,  0.9, 0.6])
+    end_pose[:3]   = torch.tensor([0.0,  3., 0.6])
 
     start_pose[6:15] = torch.eye(3).reshape(-1)
     end_pose[6:15] = torch.eye(3).reshape(-1)
@@ -362,3 +426,13 @@ if __name__ == "__main__":
     print('Projected states', proj_states)
     print('Actions Planner', action_planner)
     #print('Initialized actions', init_actions)
+
+    #MPC LOOP
+    current_state = start_pose
+    for iter in range(20):
+        #Perform action
+        act_now = action_planner[iter, :]
+        current_state = planner.dynamics(current_state, act_now)
+        print(current_state)
+
+        proj_states, action_planner = planner.plan_traj(current_state, action_planner, update=True)
