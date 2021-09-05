@@ -195,7 +195,7 @@ class System:
     def get_actions(self) -> TensorType["states", 4]:
         pos, vel, accel, rot_matrix, omega, angular_accel, actions = self.calc_everything()
 
-        if not torch.isclose( actions[:2, 0], self.initial_accel ):
+        if not torch.allclose( actions[:2, 0], self.initial_accel ):
             print(actions)
             print(self.initial_accel)
         return actions
@@ -301,8 +301,12 @@ class System:
 
     @typechecked
     def update_state(self, measured_state: TensorType[18]):
+        pos, vel, accel, rot_matrix, omega, angular_accel, actions = self.calc_everything()
+
         self.start_state = measured_state
         self.states = self.states[1:, :].detach().requires_grad_(True)
+        self.initial_accel = actions[1:3, 0].detach().requires_grad_(True)
+        print(self.initial_accel.shape)
 
 
     def plot(self, quadplot):
@@ -367,14 +371,17 @@ def main():
     # start_pos = torch.tensor([-1, 0, 0.2])
     # end_pos   = torch.tensor([ 1, 0, 0.5])
 
-    start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
+    start_R = vec_to_rot_matrix( torch.tensor([0.2,0.3,0]))
+    print(start_R)
+
+    start_state = torch.cat( [start_pos, torch.tensor([0,1,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
     renderer = get_manual_nerf("empty")
 
     cfg = {"T_final": 2,
             "steps": 20,
-            "lr": 0.002,
+            "lr": 0.005,
             "epochs_init": 2500,
             "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
@@ -382,8 +389,8 @@ def main():
             }
 
     traj = System(renderer, start_state, end_state, cfg)
-    traj.learn_init()
-    # traj.load_progress("quad_train.pt")
+    # traj.learn_init()
+    traj.load_progress("quad_train.pt")
 
 
     sim = Simulator(start_state)
@@ -396,35 +403,35 @@ def main():
     traj.plot(quadplot)
     quadplot.show()
 
-    # traj.save_progress("quad_train.pt")
+    traj.save_progress("quad_train.pt")
 
     if True:
         for step in range(cfg['steps']):
-            # action = traj.get_actions()[step,:]
-            # print(action)
-            # sim.advance(action)
-
-            action = traj.get_next_action().clone().detach()
+            action = traj.get_actions()[step,:]
             print(action)
+            sim.advance(action)
 
-            sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
-            measured_state = sim.get_current_state().clone().detach()
+            # action = traj.get_next_action().clone().detach()
+            # print(action)
 
-            # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + torch.zeros( ( ) ) )
+            # sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
+            # measured_state = sim.get_current_state().clone().detach()
+
+            # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
             # measured_state += randomness
-            traj.update_state(measured_state) 
+            # traj.update_state(measured_state) 
 
-            traj.learn_update()
+            # traj.learn_update()
 
-            print("sim step", step)
-            if step % 10 !=0 or step == 0:
-                continue
+            # print("sim step", step)
+            # if step % 10 !=0 or step == 0:
+            #     continue
 
-            quadplot = QuadPlot()
-            traj.plot(quadplot)
-            quadplot.trajectory( sim, "r" )
-            quadplot.trajectory( save, "b", show_cloud=False )
-            quadplot.show()
+            # quadplot = QuadPlot()
+            # traj.plot(quadplot)
+            # quadplot.trajectory( sim, "r" )
+            # quadplot.trajectory( save, "b", show_cloud=False )
+            # quadplot.show()
 
             # # traj.save_poses(???)
             # sim.advance_smooth(action, 10)
@@ -432,6 +439,12 @@ def main():
             # measured_state = traj.get_full_states()[1,:].detach()
             # sim.add_state(measured_state)
             # measured_state += randomness
+
+        t_states = traj.get_full_states()   
+        for i in range(sim.states.shape[0]):
+            print(i)
+            print(t_states[i,:])
+            print(sim.states[i,:])
 
         quadplot = QuadPlot()
         traj.plot(quadplot)
