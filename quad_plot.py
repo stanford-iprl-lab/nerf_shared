@@ -352,8 +352,8 @@ def main():
 
     if True:
         for step in range(cfg['steps']):
-            action = traj.get_next_action()
-            # action = traj.get_actions()[step,:]
+            # action = traj.get_next_action()
+            action = traj.get_actions()[step,:]
             print(action)
 
             sim.advance(action)
@@ -362,22 +362,22 @@ def main():
             # randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
             # measured_state = current_state + randomness
 
-            full_state = sim.get_current_state().detach()
-            traj.update_state(full_state)
+            # full_state = sim.get_current_state().detach()
+            # traj.update_state(full_state)
 
 
-            traj.learn_update()
+            # traj.learn_update()
             # # traj.save_poses(???)
 
             print("sim step", step)
-            if step % 10 !=0:
-                continue
+            # if step % 10 !=0:
+            #     continue
 
-            quadplot = QuadPlot()
-            traj.plot(quadplot)
-            quadplot.trajectory( sim, "r" )
-            quadplot.trajectory( save, "b", show_cloud=False )
-            quadplot.show()
+        quadplot = QuadPlot()
+        traj.plot(quadplot)
+        quadplot.trajectory( sim, "r" )
+        quadplot.trajectory( save, "b", show_cloud=False )
+        quadplot.show()
 
 
 

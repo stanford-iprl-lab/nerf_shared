@@ -123,7 +123,21 @@ class Simulator:
 
         return next_state
 
+    def save_poses(self, filename):
+        positions = self.state[:,0:3]
+        v   = self.state[:,3:6]
+        rot_matrix = self.state[:,6:15].reshape((-1, 3, 3))
+        omega = self.state[:,15:]
 
+        with open(filename,"w+") as f:
+            for pos, rot in zip(positions, rot_matrix):
+                pose = np.zeros((4,4))
+                pose[:3, :3] = rot.detach().numpy()
+                pose[:3, 3]  = pos.detach().numpy()
+                pose[3,3] = 1
+
+                json.dump(pose.tolist(), f)
+                f.write('\n')
 
 
 class QuadPlot:
