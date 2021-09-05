@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 
 import json
+import os
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -220,7 +221,7 @@ class System:
 
         # S, 3, _     =   S, 3, 3  @ S, 3, _
         # print(accel)
-        body_frame_accel   = ( rot_matrix[-1 ,:,:].swapdims(-1,-2) @ accel[:,:,None]) [:,:,0]
+        body_frame_accel   = ( rot_matrix.swapdims(-1,-2) @ accel[:,:,None]) [:,:,0]
         # print(body_frame_accel)
         # pick out the ones we want to constrain (the rest are already constrained
         # body_frame_accel = body_frame_accel[ torch.tensor([0,1, -2,-1]), :]
@@ -229,12 +230,12 @@ class System:
 
         # if not torch.allclose( residue_angle[2:-3], torch.zeros((residue_angle.shape[0] - 5))):
         #     print("isclose", torch.isclose( residue_angle[2:-3], torch.zeros((residue_angle.shape[0] - 5))))
-        #     print("residue_angle", residue_angle)
+        print("residue_angle", residue_angle)
 
-        #     print("rot", rot_matrix[3,:,:])
-        #     print("accel", accel[3,:])
-        #     print("body_accel", body_frame_accel[3,:])
-        #     raise False
+            # print("rot", rot_matrix[3,:,:])
+            # print("accel", accel[3,:])
+            # print("body_accel", body_frame_accel[3,:])
+            # raise False
 
         residue_angle = residue_angle[ torch.tensor([0,1, -3, -2,-1]) ]
 
@@ -242,7 +243,7 @@ class System:
         dynamics_residual = torch.mean( residue_angle**2 )
 
         #PARAM cost function shaping
-        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1e7 * dynamics_residual
+        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1e6 * dynamics_residual
 
     def total_cost(self):
         total_cost, colision_loss, dynamics_residual = self.get_state_cost()
@@ -336,12 +337,11 @@ class System:
                 f.write('\n')
 
     def save_progress(self, filename):
-        with open(filename,"w+") as f:
-            torch.save(self.states, f)
+        os.remove(filename)
+        torch.save(self.states, filename)
 
     def load_progress(self, filename):
-        with open(filename,"w+") as f:
-            self.states = torch.load(f).clone().requires_grad_(True)
+        self.states = torch.load(filename).clone().requires_grad_(True)
 
 def main():
 
@@ -363,12 +363,12 @@ def main():
             "epochs_init": 2500,
             "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
-            "epochs_update": 50,
+            "epochs_update": 200,
             }
 
     traj = System(renderer, start_state, end_state, cfg)
-    traj.learn_init()
-    # traj.load_progress("quad_train.pt")
+    # traj.learn_init()
+    traj.load_progress("quad_train.pt")
 
 
     sim = Simulator(start_state)
