@@ -185,7 +185,7 @@ class System:
     def get_next_action(self) -> TensorType[4]:
         actions = self.get_actions()
         # fz, tx, ty, tz
-        return 2*actions[0, :]
+        return (actions[0, :] + actions[1, :])/2
 
     @typechecked
     def body_to_world(self, points: TensorType["batch", 3]) -> TensorType["states", "batch", 3]:
@@ -338,11 +338,11 @@ def main():
 
     cfg = {"T_final": 2,
             "steps": 20,
-            "lr": 0.001,
+            "lr": 0.002,
             "epochs_init": 2500,
             "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
-            "epochs_update": 500,
+            "epochs_update": 250,
             }
 
     traj = System(renderer, start_state, end_state, cfg)
@@ -355,9 +355,9 @@ def main():
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())
 
-    # quadplot = QuadPlot()
-    # traj.plot(quadplot)
-    # quadplot.show()
+    quadplot = QuadPlot()
+    traj.plot(quadplot)
+    quadplot.show()
 
 
     if True:
