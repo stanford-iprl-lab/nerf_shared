@@ -80,7 +80,7 @@ class System:
         #PARAM this sets the shape of the robot body point cloud
         body = torch.stack( torch.meshgrid( torch.linspace(-0.05, 0.05, 10),
                                             torch.linspace(-0.05, 0.05, 10),
-                                            torch.linspace(-0.02, 0.02,  5)), dim=-1)
+                                            torch.linspace(-0.02, 0.02,  5)), dim=-1).to(device)
         self.robot_body = body.reshape(-1, 3)
         # self.robot_body = torch.zeros(1,3)
 
