@@ -225,30 +225,39 @@ class Planner:
 
         return torch.hstack((next_pos, next_vel, next_rot, next_omega))
 
-    def plan_traj(self, state_estimate, init_actions, update=False):
+    def plan_traj(self, state_estimate, init_actions, update=0):
+
+        #update should be int describing the number of steps/actions already taken. update=0 means
+        # we are initializing
+        num_steps = self.steps - update
+
+        if num_steps <= 0:
+            print('Planner cannot plan more steps. Please reinitialize planner with new waypoints.')
+            return
 
         #Initialize path module
         starting_pose = torch.Tensor(state_estimate)
-        path_propagation = path(init_actions, self.steps, self.mass, self.g, self.I, self.dt)
+        path_propagation = path(init_actions, num_steps, self.mass, self.g, self.I, self.dt)
         optimizer = torch.optim.Adam(params=path_propagation.parameters(), lr=self.lr, betas=(0.9, 0.999))
 
-        if update == True:
-            num_iter = self.epochs_update
-        else:
+        if update == 0:
             num_iter = self.epochs_init
+        else:
+            num_iter = self.epochs_update
 
         for it in range(num_iter):
             optimizer.zero_grad()
             t1 = time.time()
             projected_states, actions = path_propagation(starting_pose)
+            t2 = time.time()
+            print('Propagation', t2 - t1)
 
             loss = self.get_loss(projected_states, actions)
-            t2 = time.time()
-            #print('Propagation', t2 - t1)
+            t3 = time.time()
+            print('Calculating Loss', t3-t2)
 
             loss.backward()
             optimizer.step()
-            t3 = time.time()
 
             if it % 20 == 0:
                 print('Iteration', it)
@@ -258,7 +267,6 @@ class Planner:
             new_lrate = self.lr * (0.8 ** ((it + 1) / self.epochs_init))
             for param_group in optimizer.param_groups:
                 param_group['lr'] = new_lrate
-            #print('Backprop', t3-t2)
 
             if it % 100 == 0:
                 self.save_poses(projected_states.cpu().detach().numpy(), './paths/drone_pose' + f'{it}.json')
