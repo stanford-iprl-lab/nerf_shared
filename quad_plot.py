@@ -392,14 +392,17 @@ def main():
             action = traj.get_next_action().clone().detach()
             print(action)
 
-            sim.advance(action)
+            sim.advance(action + torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
             measured_state = sim.get_current_state().clone().detach()
-            traj.update_state(measured_state)
+
+            # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + torch.zeros( ( ) ) )
+            # measured_state += randomness
+            traj.update_state(measured_state) 
 
             traj.learn_update()
 
             print("sim step", step)
-            if step % 5 !=0 or step == 0:
+            if step % 10 !=0 or step == 0:
                 continue
 
             quadplot = QuadPlot()
