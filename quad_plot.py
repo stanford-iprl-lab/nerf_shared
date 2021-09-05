@@ -378,10 +378,11 @@ def main():
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
     renderer = get_manual_nerf("empty")
+    # renderer = get_manual_nerf("cylinder")
 
     cfg = {"T_final": 2,
             "steps": 20,
-            "lr": 0.005,
+            "lr": 0.01,
             "epochs_init": 2500,
             "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
@@ -389,8 +390,10 @@ def main():
             }
 
     traj = System(renderer, start_state, end_state, cfg)
-    # traj.learn_init()
-    traj.load_progress("quad_train.pt")
+    traj.learn_init()
+    filename = "quad_cylinder_train.pt"
+    # filename = "quad_train.pt"
+    # traj.load_progress(filename)
 
 
     sim = Simulator(start_state)
@@ -403,7 +406,7 @@ def main():
     traj.plot(quadplot)
     quadplot.show()
 
-    traj.save_progress("quad_train.pt")
+    traj.save_progress(filename)
 
     if True:
         for step in range(cfg['steps']):
