@@ -194,6 +194,10 @@ class System:
 
     def get_actions(self) -> TensorType["states", 4]:
         pos, vel, accel, rot_matrix, omega, angular_accel, actions = self.calc_everything()
+
+        if not torch.isclose( actions[:2, 0], self.initial_accel ):
+            print(actions)
+            print(self.initial_accel)
         return actions
 
     def get_next_action(self) -> TensorType[4]:
@@ -396,31 +400,31 @@ def main():
 
     if True:
         for step in range(cfg['steps']):
-            action = traj.get_actions()[step,:]
-            print(action)
-            sim.advance(action)
-
-            # action = traj.get_next_action().clone().detach()
+            # action = traj.get_actions()[step,:]
             # print(action)
+            # sim.advance(action)
 
-            # sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
-            # measured_state = sim.get_current_state().clone().detach()
+            action = traj.get_next_action().clone().detach()
+            print(action)
 
-            # # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + torch.zeros( ( ) ) )
-            # # measured_state += randomness
-            # traj.update_state(measured_state) 
+            sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
+            measured_state = sim.get_current_state().clone().detach()
 
-            # traj.learn_update()
+            # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + torch.zeros( ( ) ) )
+            # measured_state += randomness
+            traj.update_state(measured_state) 
 
-            # print("sim step", step)
-            # if step % 10 !=0 or step == 0:
-            #     continue
+            traj.learn_update()
 
-            # quadplot = QuadPlot()
-            # traj.plot(quadplot)
-            # quadplot.trajectory( sim, "r" )
-            # quadplot.trajectory( save, "b", show_cloud=False )
-            # quadplot.show()
+            print("sim step", step)
+            if step % 10 !=0 or step == 0:
+                continue
+
+            quadplot = QuadPlot()
+            traj.plot(quadplot)
+            quadplot.trajectory( sim, "r" )
+            quadplot.trajectory( save, "b", show_cloud=False )
+            quadplot.show()
 
             # # traj.save_poses(???)
             # sim.advance_smooth(action, 10)
