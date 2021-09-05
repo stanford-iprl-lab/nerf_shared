@@ -215,17 +215,10 @@ class System:
             colision_prob = colision_prob * mask
 
         #dynamics residual loss - make sure acceleration point in body frame z axis
-        
-        # start_body_frame_accel = rot_matrix[0 ,:,:].T @ accel[0 ,:]
-        # s_residue_angle = torch.atan2( (start_body_frame_accel[0]**2 + start_body_frame_accel[1]**2)**0.5, start_body_frame_accel[2])
 
         # S, 3, _     =   S, 3, 3  @ S, 3, _
-        # print(accel)
         body_frame_accel   = ( rot_matrix.swapdims(-1,-2) @ accel[:,:,None]) [:,:,0]
-        # print(body_frame_accel)
         # pick out the ones we want to constrain (the rest are already constrained
-        # body_frame_accel = body_frame_accel[ torch.tensor([0,1, -2,-1]), :]
-        # residue_angle = torch.atan2( (body_frame_accel[:,0]**2 + body_frame_accel[:,1]**2)**0.5, body_frame_accel[:,2])
         residue_angle = torch.atan2( torch.norm(body_frame_accel[:,:2], dim =-1 ) , body_frame_accel[:,2])
 
         # if not torch.allclose( residue_angle[2:-3], torch.zeros((residue_angle.shape[0] - 5))):
@@ -239,11 +232,10 @@ class System:
 
         residue_angle = residue_angle[ torch.tensor([0,1, -3, -2,-1]) ]
 
-        # print(residue_angle)
-        dynamics_residual = torch.mean( residue_angle**2 )
+        dynamics_residual = torch.mean( torch.abs(residue_angle)**2 )
 
         #PARAM cost function shaping
-        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1e6 * dynamics_residual
+        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1e5 * dynamics_residual
 
     def total_cost(self):
         total_cost, colision_loss, dynamics_residual = self.get_state_cost()
@@ -355,11 +347,11 @@ def main():
     start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
-    renderer = get_manual_nerf("empty")
+    renderer = get_manual_nerf("cylinder")
 
     cfg = {"T_final": 2,
             "steps": 20,
-            "lr": 0.001,
+            "lr": 0.002,
             "epochs_init": 2500,
             "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
@@ -367,8 +359,8 @@ def main():
             }
 
     traj = System(renderer, start_state, end_state, cfg)
-    # traj.learn_init()
-    traj.load_progress("quad_train.pt")
+    traj.learn_init()
+    # traj.load_progress("quad_train.pt")
 
 
     sim = Simulator(start_state)
@@ -392,7 +384,7 @@ def main():
             action = traj.get_next_action().clone().detach()
             print(action)
 
-            sim.advance(action + torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
+            sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
             measured_state = sim.get_current_state().clone().detach()
 
             # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + torch.zeros( ( ) ) )
