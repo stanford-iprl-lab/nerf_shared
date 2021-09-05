@@ -33,6 +33,7 @@ class Simulator:
         self.dt = 0.1
         self.g = 10
 
+    @typechecked
     def add_state(self, state: TensorType[18]):
         self.states = torch.cat( [self.states, state[None,:] ], dim=0 )
 
@@ -41,7 +42,8 @@ class Simulator:
         next_state = self.next_state(self.states[-1, :], action)
         self.states = torch.cat( [self.states, next_state[None,:] ], dim=0 )
 
-    def get_currrent_state(self):
+    @typechecked
+    def get_current_state(self) -> TensorType[18]:
         return self.states[-1,:]
 
     @typechecked

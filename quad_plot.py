@@ -315,7 +315,7 @@ def main():
             "epochs_init": 2500,
             "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
-            "epochs_update": 500,
+            "epochs_update": 200,
             }
 
     traj = System(renderer, start_state, end_state, cfg)
@@ -334,8 +334,8 @@ def main():
             # # idealy something like this but we jank it for now
             # action = traj.get_actions()[0 or 1, :]
 
-            # action = traj.get_next_action()
-            action = traj.get_actions()[step,:]
+            action = traj.get_next_action()
+            # action = traj.get_actions()[step,:]
 
             sim.advance(action)
             # current_state = next_state(action)
@@ -348,18 +348,20 @@ def main():
             # randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
 
             # measured_state = current_state + randomness
-            # traj.update_state( current_state )
+            full_state = sim.get_current_state().detach()
+
+            traj.update_state( torch.cat([full_state[:3], torch.zeros(1)]) )
 
 
-            # traj.learn_update()
+            traj.learn_update()
             # traj.save_poses(???)
 
             print("sim step", step)
 
-        quadplot = QuadPlot()
-        traj.plot(quadplot)
-        quadplot.trajectory( sim, "r" )
-        quadplot.show()
+            quadplot = QuadPlot()
+            traj.plot(quadplot)
+            quadplot.trajectory( sim, "r" )
+            quadplot.show()
 
 
 
