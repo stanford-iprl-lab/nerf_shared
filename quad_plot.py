@@ -46,6 +46,7 @@ def get_manual_nerf(name):
 
 
 class System:
+    @typechecked
     def __init__(self, renderer, start_state, end_state, cfg):
         self.nerf = renderer.get_density
 
@@ -65,14 +66,18 @@ class System:
         start_state= torch.cat( [start_state[:3], torch.zeros(1)], dim =0)
         end_state = torch.cat( [end_state[:3], torch.zeros(1)], dim =0)
 
+        self.mass = 1
+        self.J = torch.eye(3)
+        self.g = torch.tensor([0,0,-10])
 
-        # create initial and final 3 states to constrain: position, velocity and possibly angle in the future
-        self.start_states = start_state[None,:] + torch.tensor([-1,0,1])[:,None] * self.dt * start_vel
-        self.end_states   = end_state[None,:]   + torch.tensor([-1,0,1])[:,None] * self.dt * end_vel  
+        self.start_states = start_state
+        self.end_states   = end_state
 
         slider = torch.linspace(0, 1, self.steps)[1:-1, None]
 
-        states = (1-slider) * self.start_states[-1,:] + slider * self.end_states[0,:]
+        states = (1-slider) * self.full_to_reduced_state(start_state) + \
+                    slider  * self.full_to_reduced_state(end_state)
+
         self.states = states.clone().detach().requires_grad_(True)
 
         #PARAM this sets the shape of the robot body point cloud
@@ -85,6 +90,18 @@ class System:
         self.epoch = 0
 
 
+    @typechecked
+    def full_to_reduced_state(self, state: TensorType[18]) -> TensorType[4]:
+        pos = state[:3]
+        R = state[6:15].reshape((3,3))
+
+        forward = R @ torch.tensor( [1.0, 0, 0 ] )
+        # print(forward.shape)
+        x = forward[:,0]
+        y = forward[:,1]
+        angle = torch.atan2(y, x)
+
+        return torch.cat( [pos, angle[:,None] ], dim = -1).detach()
 
     def params(self):
         return [self.states]
@@ -93,8 +110,6 @@ class System:
         return torch.cat( [self.start_states, self.states, self.end_states], dim=0)
 
     def get_actions(self):
-        mass = 1
-        J = torch.eye(3)
 
         rot_matrix, z_accel, _ = self.get_rots_and_accel()
 
@@ -110,35 +125,48 @@ class System:
         angular_accel = (ang_vel[1:,...] - ang_vel[:-1,...])/self.dt
 
         # S, 3    3,3      S, 3, 1
-        torques = (J @ angular_accel[...,None])[...,0]
+        torques = (self.J @ angular_accel[...,None])[...,0]
 
-        return torch.cat([ z_accel*mass, torques ], dim=-1)
+        return torch.cat([ z_accel*self.mass, torques ], dim=-1)
 
-    def get_rots_and_accel(self):
-        g = torch.tensor([0,0,-10])
+    def calc_everything(self):
 
-        states = self.get_states()
-        prev_state = states[:-1, :]
-        next_state = states[1:, :]
+        start_pos   = self.start_state[None, 0:3]
+        start_v     = self.start_state[None, 3:6]
+        start_R     = self.start_state[6:15].reshape((1, 3, 3))
+        start_omega = self.start_state[None, 15:]
 
-        diff = (next_state - prev_state)/self.dt
-        vel = diff[..., :3]
+        end_pos   = self.end_state[None, 0:3]
+        end_v     = self.end_state[None, 3:6]
+        end_R     = self.end_state[6:15].reshape((1, 3, 3))
+        end_omega = self.end_state[None, 15:]
 
-        prev_vel = vel[:-1, :]
-        next_vel = vel[1:, :]
+        current_pos = torch.cat( [start_pos, self.states[:, :3], end_pos], dim=0)
+        prev_pos = current_pos[:-1, :]
+        next_pos = current_pos[:1 , :]
+
+        midpoint_vel = (next_pos - prev_pos)/self.dt
+
+        prestart_vel = 2*start_v - midpoint_vel[0,None,:]
+        postend_vel  = 2*end_v   - midpoint_vel[-1,None,:]
+
+        midpoint_vel = torch.cat( [ prestart_vel, midpoint_vel, postend_vel], dim=0)
+        prev_vel = midpoint_vel[:-1, :]
+        next_vel = midpoint_vel[1:, :]
 
         current_vel = (next_vel + prev_vel)/2
 
-        target_accel = (next_vel - prev_vel)/self.dt - g
-        z_accel     = torch.norm(target_accel, dim=-1, keepdim=True)
+        current_accel = (next_vel - prev_vel)/self.dt - self.g
+
+        accel_mag     = torch.norm(current_accel, dim=-1, keepdim=True)
 
         # needs to be pointing in direction of acceleration
-        z_axis_body = target_accel/z_accel
+        z_axis_body = current_accel/accel_mag
 
-        #duplicate first and last angle to enforce zero angular velocity constraint
-        z_axis_body = torch.cat( [ z_axis_body[:1,:], z_axis_body, z_axis_body[-1:,:]], dim=0)
+        # remove first and last state - we already have their rotations constrained
+        z_axis_body = z_axis_body[1:-1, :]
 
-        z_angle = states[:,3]
+        z_angle = self.states[:,3]
         in_plane_heading = torch.stack( [torch.sin(z_angle), -torch.cos(z_angle), torch.zeros_like(z_angle)], dim=-1)
 
         x_axis_body = torch.cross(z_axis_body, in_plane_heading, dim=-1)
@@ -147,9 +175,25 @@ class System:
 
         # S, 3, 3 # assembled manually from basis vectors
         rot_matrix = torch.stack( [x_axis_body, y_axis_body, z_axis_body], dim=-1)
+        rot_matrix = torch.cat( [start_R, rot_matrix, end_R], dim=0)
 
-        # return pos, current_vel, rot_matrix, angular_rate, 
-        return rot_matrix, z_accel, current_vel
+        midpoint_omega = rot_matrix_to_vec( rot_matrix[1:, ...] @ rot_matrix[:-1, ...].swapdims(-1,-2) ) / self.dt
+
+        prestart_omega = 2*start_omega - midpoint_omega[0,None,:]
+        postend_omega  = 2*end_omega   - midpoint_omega[-1,None,:]
+
+        midpoint_omega = torch.cat( [ prestart_omega, midpoint_omega, postend_omega], dim=0)
+        prev_omega = midpoint_omega[:-1, :]
+        next_omega = midpoint_omega[1:, :]
+
+        current_omega = (next_omega + prev_omega)/2
+        angular_accel = (next_omega - prev_omega)/self.dt
+
+        # S, 3    3,3      S, 3, 1
+        torques = (self.J @ angular_accel[...,None])[...,0]
+        actions =  torch.cat([ accel_mag*self.mass, torques ], dim=-1)
+
+        return current_pos, current_vel, current_accel, rot_matrix, current_omega, angular_accel, actions
 
     def get_next_action(self) -> TensorType["state_dim"]:
         actions = self.get_actions()
