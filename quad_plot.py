@@ -21,6 +21,7 @@ np.random.seed(0)
 
 from quad_helpers import Simulator, QuadPlot
 from quad_helpers import rot_matrix_to_vec, vec_to_rot_matrix
+from quad_helpers import astar
 
 # # hard coded "nerf" for testing. see below to import real nerf
 def get_manual_nerf(name):
@@ -46,7 +47,7 @@ def get_manual_nerf(name):
 
 
 class System:
-    def __init__(self, renderer, start_state, end_state, cfg):
+    def __init__(self, renderer, start_state, end_state, start_vel, end_vel, cfg):
         self.nerf = renderer.get_density
 
         self.T_final            = cfg['T_final']
@@ -58,12 +59,6 @@ class System:
         self.fade_out_sharpness = cfg['fade_out_sharpness']
 
         self.dt = self.T_final / self.steps
-
-        start_vel = torch.cat( [start_state[3:6], torch.zeros(1)], dim =0)
-        end_vel = torch.cat( [end_state[3:6], torch.zeros(1)], dim =0)
-
-        start_state= torch.cat( [start_state[:3], torch.zeros(1)], dim =0)
-        end_state = torch.cat( [end_state[:3], torch.zeros(1)], dim =0)
 
 
         # create initial and final 3 states to constrain: position, velocity and possibly angle in the future
@@ -84,7 +79,45 @@ class System:
 
         self.epoch = 0
 
+    def a_star_init(self):
+        #TODO WARNING
+        side = 100
+        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
 
+        # side, side, side, 3
+        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+            
+        output = self.nerf(coods)
+        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
+        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
+        # 20, 20, 20
+
+        print(occupied.shape)
+        grid_size = side//5
+
+        start_grid_float = grid_size*(self.start_states[1, :3] + 1)/2
+        end_grid_float   = grid_size*(self.end_states  [1, :3] + 1)/2
+
+        print(start_grid_float)
+        print(end_grid_float)
+        
+        start = tuple(int(start_grid_float[i]) for i in range(3) )
+        end =   tuple(int(end_grid_float[i]  ) for i in range(3) )
+        print(start, end)
+
+        path = astar(occupied, start, end)
+
+        squares =  2* (torch.tensor( path, dtype=torch.float)/grid_size) -1
+        print(squares.shape)
+
+        #yaw
+        states = torch.cat( [squares, torch.zeros( (squares.shape[0], 1) ) ], dim=-1)
+
+        randomness = torch.normal(mean= 0, std=0.001*torch.ones(states.shape) )
+        states += randomness
+
+        self.states = states.clone().detach().requires_grad_(True)
+        #unfinished
 
     def params(self):
         return [self.states]
@@ -282,35 +315,58 @@ def main():
 
     # renderer = get_nerf('configs/stonehenge.txt')
     # stonehenge - simple
-    start_pos = torch.tensor([-0.05,-0.9, 0.2])
-    end_pos   = torch.tensor([-1 , 0.7, 0.05])
+    # start_pos = torch.tensor([-0.05,-0.9, 0.2])
+    # end_pos   = torch.tensor([-1 , 0.7, 0.05])
 
-    start_state = torch.cat( [start_pos, torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
-    end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
+    renderer = get_nerf('configs/violin.txt')
+    # violin - simple
+    # start_state = torch.tensor([-0.3 ,-0.5, 0.1, 0])
+    # end_state   = torch.tensor([-0.35, 0.7, 0.15 , 0])
 
-    renderer = get_manual_nerf("empty")
+    # violin - dodge
+    # start_state = torch.tensor([-0.35,-0.5, 0.05, 0])
+    # end_state   = torch.tensor([ 0.1,  0.6, 0.3 , 0])
+
+    # violin - middle
+    start_state = torch.tensor([0,-0.5, 0.1, 0])
+    end_state   = torch.tensor([0, 0.7, 0.15 , 0])
+
+    start_vel = torch.tensor([0, 0, 0, 0])
+    end_vel   = torch.tensor([0, 0, 0, 0])
+
+    # renderer = get_manual_nerf("empty")
 
     cfg = {"T_final": 2,
             "steps": 20,
-            "lr": 0.001,
+            "lr": 0.002,
             "epochs_init": 2500,
             "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
             "epochs_update": 200,
             }
 
-    traj = System(renderer, start_state, end_state, cfg)
+    traj = System(renderer, start_state, end_state, start_vel, end_vel, cfg)
+
+    traj.a_star_init()
+    # traj.learn_init()
+
+
+
+    # quadplot = QuadPlot()
+    # traj.plot(quadplot)
+    # quadplot.show()
+
     traj.learn_init()
-
-
-    sim = Simulator(start_state)
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
     quadplot.show()
 
+    # traj.save_poses("paths/0_testing.json")
+    # print("saved")
 
-    if True:
+    if False:
+        # sim = Simulator(start_state)
         for step in range(cfg['steps']):
             # # idealy something like this but we jank it for now
             # action = traj.get_actions()[0 or 1, :]
@@ -348,7 +404,8 @@ def main():
 
 
     #PARAM file to save the trajectory
-    # traj.save_poses("paths/playground_testing.json")
+        traj.save_poses("paths/0_testing.json")
+        print("saved")
     # traj.plot()
 
 

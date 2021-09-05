@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import numpy as np
 
 import json
+import heapq 
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -193,6 +194,9 @@ def astar(occupied, start, goal):
     came_from = {}
     gscore = {start: 0}
 
+    assert not occupied[start]
+    assert not occupied[goal]
+
     open_heap = []
     heapq.heappush(open_heap, (heuristic(start, goal), start))
 
@@ -206,7 +210,7 @@ def astar(occupied, start, goal):
                 current = came_from[current]
             assert current == start
             data.append(current)
-            return reversed(data)
+            return list(reversed(data))
 
         close_set.add(current)
 
@@ -233,45 +237,6 @@ def astar(occupied, start, goal):
 
 
 
-    def a_star_init(self):
-        #TODO WARNING
-        side = 100
-        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
-
-        # side, side, side, 3
-        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
-            
-        output = self.nerf(coods)
-        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
-        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
-        # 20, 20, 20
-
-        self.start_states[1, :3]
-        self.end_states[-2, :3]
-
-        path = astar(occupied, start, end)
-        #unfinished
-
-
-
-    def a_star_init(self):
-        #TODO WARNING
-        side = 100
-        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
-
-        # side, side, side, 3
-        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
-            
-        output = self.nerf(coods)
-        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
-        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
-        # 20, 20, 20
-
-        self.start_states[1, :3]
-        self.end_states[-2, :3]
-
-        path = astar(occupied, start, end)
-        #unfinished
 
 
 def settings():
