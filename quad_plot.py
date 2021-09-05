@@ -186,7 +186,7 @@ class System:
     def get_next_action(self) -> TensorType[4]:
         actions = self.get_actions()
         # fz, tx, ty, tz
-        return (actions[0, :] + actions[1, :])/2
+        return actions[0, :]
 
     @typechecked
     def body_to_world(self, points: TensorType["batch", 3]) -> TensorType["states", "batch", 3]:
@@ -223,14 +223,26 @@ class System:
         body_frame_accel   = ( rot_matrix[-1 ,:,:].swapdims(-1,-2) @ accel[:,:,None]) [:,:,0]
         # print(body_frame_accel)
         # pick out the ones we want to constrain (the rest are already constrained
-        body_frame_accel = body_frame_accel[ torch.tensor([0,1, -2,-1]), :]
+        # body_frame_accel = body_frame_accel[ torch.tensor([0,1, -2,-1]), :]
         # residue_angle = torch.atan2( (body_frame_accel[:,0]**2 + body_frame_accel[:,1]**2)**0.5, body_frame_accel[:,2])
-        residue_angle = torch.atan2( torch.norm(body_frame_accel[:,:2]) , body_frame_accel[:,2])
+        residue_angle = torch.atan2( torch.norm(body_frame_accel[:,:2], dim =-1 ) , body_frame_accel[:,2])
+
+        # if not torch.allclose( residue_angle[2:-3], torch.zeros((residue_angle.shape[0] - 5))):
+        #     print("isclose", torch.isclose( residue_angle[2:-3], torch.zeros((residue_angle.shape[0] - 5))))
+        #     print("residue_angle", residue_angle)
+
+        #     print("rot", rot_matrix[3,:,:])
+        #     print("accel", accel[3,:])
+        #     print("body_accel", body_frame_accel[3,:])
+        #     raise False
+
+        residue_angle = residue_angle[ torch.tensor([0,1, -3, -2,-1]) ]
+
         # print(residue_angle)
         dynamics_residual = torch.mean( residue_angle**2 )
 
         #PARAM cost function shaping
-        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1e6 * dynamics_residual
+        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 1e7 * dynamics_residual
 
     def total_cost(self):
         total_cost, colision_loss, dynamics_residual = self.get_state_cost()
@@ -323,6 +335,13 @@ class System:
                 json.dump(pose.tolist(), f)
                 f.write('\n')
 
+    def save_progress(self, filename):
+        with open(filename,"w+") as f:
+            torch.save(self.states, f)
+
+    def load_progress(self, filename):
+        with open(filename,"w+") as f:
+            self.states = torch.load(f).clone().requires_grad_(True)
 
 def main():
 
@@ -340,15 +359,16 @@ def main():
 
     cfg = {"T_final": 2,
             "steps": 20,
-            "lr": 0.002,
+            "lr": 0.001,
             "epochs_init": 2500,
             "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
-            "epochs_update": 250,
+            "epochs_update": 50,
             }
 
     traj = System(renderer, start_state, end_state, cfg)
     traj.learn_init()
+    # traj.load_progress("quad_train.pt")
 
 
     sim = Simulator(start_state)
@@ -361,37 +381,47 @@ def main():
     traj.plot(quadplot)
     quadplot.show()
 
+    traj.save_progress("quad_train.pt")
 
     if True:
         for step in range(cfg['steps']):
-            # action = traj.get_next_action()
-            action = traj.get_actions()[step,:]
+            # action = traj.get_actions()[step,:]
+            # print(action)
+            # sim.advance(action)
+
+            action = traj.get_next_action().clone().detach()
             print(action)
 
             sim.advance(action)
-            # sim.advance_smooth(action, 10)
+            measured_state = sim.get_current_state().clone().detach()
+            traj.update_state(measured_state)
 
+            traj.learn_update()
+
+            print("sim step", step)
+            if step % 5 !=0 or step == 0:
+                continue
+
+            quadplot = QuadPlot()
+            traj.plot(quadplot)
+            quadplot.trajectory( sim, "r" )
+            quadplot.trajectory( save, "b", show_cloud=False )
+            quadplot.show()
+
+            # # traj.save_poses(???)
+            # sim.advance_smooth(action, 10)
             # randomness = torch.normal(mean= 0, std=torch.tensor([0.02]*18) )
             # measured_state = traj.get_full_states()[1,:].detach()
             # sim.add_state(measured_state)
             # measured_state += randomness
-
-            # measured_state = sim.get_current_state().detach()
-            # traj.update_state(measured_state)
-
-
-            # traj.learn_update()
-            # # traj.save_poses(???)
-
-            print("sim step", step)
-            # if step % 5 !=0 or step == 0:
-            #     continue
 
         quadplot = QuadPlot()
         traj.plot(quadplot)
         quadplot.trajectory( sim, "r" )
         quadplot.trajectory( save, "b", show_cloud=False )
         quadplot.show()
+
+
 
 
 
