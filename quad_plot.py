@@ -84,25 +84,6 @@ class System:
 
         self.epoch = 0
 
-    def a_star_init(self):
-        #TODO WARNING
-        side = 100
-        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
-
-        # side, side, side, 3
-        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
-            
-        output = self.nerf(coods)
-        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
-        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
-        # 20, 20, 20
-
-        self.start_states[1, :3]
-        self.end_states[-2, :3]
-
-        path = astar(occupied, start, end)
-        #unfinished
-
 
 
     def params(self):
@@ -334,17 +315,18 @@ def main():
             # # idealy something like this but we jank it for now
             # action = traj.get_actions()[0 or 1, :]
 
-            action = traj.get_next_action()
+            # action = traj.get_next_action()
             # action = traj.get_actions()[step,:]
 
-            sim.advance(action)
             # current_state = next_state(action)
 
             # action = traj.get_actions()[0 or 1, :]
 
             # we jank it
 
-            # current_state = traj.states[0, :].detach()
+            current_state = traj.states[0, :].detach()
+            sim.advance(action)
+
             # randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
 
             # measured_state = current_state + randomness

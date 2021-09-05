@@ -254,6 +254,26 @@ def astar(occupied, start, goal):
 
 
 
+    def a_star_init(self):
+        #TODO WARNING
+        side = 100
+        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
+
+        # side, side, side, 3
+        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+            
+        output = self.nerf(coods)
+        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
+        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
+        # 20, 20, 20
+
+        self.start_states[1, :3]
+        self.end_states[-2, :3]
+
+        path = astar(occupied, start, end)
+        #unfinished
+
+
 def settings():
     pass
     #PARAM
