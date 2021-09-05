@@ -19,6 +19,9 @@ from load_nerf import get_nerf
 torch.manual_seed(0)
 np.random.seed(0)
 
+from quad_helpers import Simulator, QuadPlot
+from quad_helpers import rot_matrix_to_vec, vec_to_rot_matrix
+
 # # hard coded "nerf" for testing. see below to import real nerf
 def get_manual_nerf(name):
     if name =='empty':
@@ -41,15 +44,9 @@ def get_manual_nerf(name):
     raise ValueError
 
 
-def plot_nerf(ax_map, nerf):
-    # can plot nerf in matplotlib but hard to be interpretable
-    pass
-
 
 class System:
-    def __init__(self, renderer, start_state, end_state,
-                        start_vel, end_vel, 
-                        cfg):
+    def __init__(self, renderer, start_state, end_state, cfg):
         self.nerf = renderer.get_density
 
         self.T_final            = cfg['T_final']
@@ -61,6 +58,13 @@ class System:
         self.fade_out_sharpness = cfg['fade_out_sharpness']
 
         self.dt = self.T_final / self.steps
+
+        start_vel = torch.cat( [start_state[3:6], torch.zeros(1)], dim =0)
+        end_vel = torch.cat( [end_state[3:6], torch.zeros(1)], dim =0)
+
+        start_state= torch.cat( [start_state[:3], torch.zeros(1)], dim =0)
+        end_state = torch.cat( [end_state[:3], torch.zeros(1)], dim =0)
+
 
         # create initial and final 3 states to constrain: position, velocity and possibly angle in the future
         self.start_states = start_state[None,:] + torch.tensor([-1,0,1])[:,None] * self.dt * start_vel
@@ -259,20 +263,11 @@ class System:
         self.start_states = torch.cat( [self.start_states, measured_state], dim=0 )
         self.states = self.states[1:, :].detach().requires_grad_(True)
 
-    def plot(self, fig = None):
-        if fig == None:
-            fig = plt.figure(figsize=(16, 8))
+    def plot(self, quadplot):
 
-        ax_map = fig.add_subplot(1, 2, 1, projection='3d')
-        ax_graph = fig.add_subplot(1, 2, 2)
-        self.plot_map(ax_map)
-        plot_nerf(ax_map, self.nerf)
+        quadplot.trajectory( self, "g" )
+        ax = quadplot.ax_graph
 
-        self.plot_graph(ax_graph) 
-        plt.tight_layout()
-        plt.show()
-
-    def plot_graph(self, ax):
         actions = self.get_actions().detach().numpy() 
         ax.plot(actions[...,0], label="fz")
         ax.plot(actions[...,1], label="tx")
@@ -284,49 +279,12 @@ class System:
         # ax.plot(states[...,4], label="vx")
         # ax.plot(states[...,7], label="ey")
 
-        ax_right = ax.twinx()
+        ax_right = quadplot.ax_graph_right
 
         total_cost, colision_loss = self.get_cost()
         ax_right.plot(total_cost.detach().numpy(), 'black', label="cost")
         ax_right.plot(colision_loss.detach().numpy(), 'cyan', label="colision")
         ax.legend()
-
-    def plot_map(self, ax):
-        ax.auto_scale_xyz([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
-        ax.set_ylim3d(-1, 1)
-        ax.set_xlim3d(-1, 1)
-        ax.set_zlim3d( 0, 1)
-
-        # PLOT PATH
-        # S, 1, 3
-        pos = self.body_to_world( torch.zeros((1,3))).detach().numpy()
-        # print(pos.shape)
-        ax.plot( pos[:,0,0], pos[:,0,1],   pos[:,0,2],  )
-
-        # PLOTS BODY POINTS
-        # S, P, 2
-        body_points = self.body_to_world( self.robot_body ).detach().numpy()
-        for i, state_body in enumerate(body_points):
-            if i < self.start_states.shape[0]:
-                color = 'r.'
-            else:
-                color = 'g.'
-            ax.plot( *state_body.T, color, ms=72./ax.figure.dpi, alpha = 0.5)
-
-        # PLOTS AXIS
-        # create point for origin, plus a right-handed coordinate indicator.
-        size = 0.05
-        points = torch.tensor( [[0, 0, 0], [size, 0, 0], [0, size, 0], [0, 0, size]])
-        colors = ["r", "g", "b"]
-
-        # S, 4, 2
-        points_world_frame = self.body_to_world(points).detach().numpy()
-        for state_axis in points_world_frame:
-            for i in range(1, 4):
-                ax.plot(state_axis[[0,i], 0],
-                        state_axis[[0,i], 1],
-                        state_axis[[0,i], 2],
-                    c=colors[i - 1],)
 
 
     def save_poses(self, filename):
@@ -345,68 +303,16 @@ class System:
 
 
 def main():
-    #PARAM nerf config
-
-    #PARAM start and end positions for the planner. [x,y,z,yaw]
-
-    # renderer = get_nerf('configs/playground.txt')
-    # playgroud - under
-    # start_state = torch.tensor([0, -0.8, 0.01, 0])
-    # end_state   = torch.tensor([0,  0.9, 0.6 , 0])
-    
-    # playgroud - upper
-    # start_state = torch.tensor([-0.11, -0.7, 0.7, 0])
-    # end_state   = torch.tensor([-0.11, 0.45, 0.7, 0])
-
-    # playground - diag
-    # start_state = torch.tensor([ 0.25, -0.47, 0.01, 0])
-    # end_state   = torch.tensor([-0.25,  0.6,  0.6 , 0])
-
-    # playground - middle
-    # start_state = torch.tensor([ 0.5, 0.2, 0.3, 0])
-    # end_state   = torch.tensor([-0.3,   0, 0.5 , 0])
-
-    renderer = get_nerf('configs/violin.txt')
-    # violin - simple
-    # start_state = torch.tensor([-0.3 ,-0.5, 0.1, 0])
-    # end_state   = torch.tensor([-0.35, 0.7, 0.15 , 0])
-
-    # violin - dodge
-    # start_state = torch.tensor([-0.35,-0.5, 0.05, 0])
-    # end_state   = torch.tensor([ 0.1,  0.6, 0.3 , 0])
-
-    # violin - middle
-    # start_state = torch.tensor([0,-0.5, 0.1, 0])
-    # end_state   = torch.tensor([0, 0.7, 0.15 , 0])
-
-    #PARAM initial and final velocities
-    start_vel = torch.tensor([0, 0, 0, 0])
-    end_vel   = torch.tensor([0, 0, 0, 0])
 
     # renderer = get_nerf('configs/stonehenge.txt')
     # stonehenge - simple
-    start_state = torch.tensor([-0.05,-0.9, 0.2, 0])
-    end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
+    start_pos = torch.tensor([-0.05,-0.9, 0.2])
+    end_pos   = torch.tensor([-0.2 , 0.7, 0.15])
 
-    # stonehenge - tricky
-    # start_state = torch.tensor([ 0.4 ,-0.9, 0.2, 0])
-    # end_state   = torch.tensor([-0.2 , 0.7, 0.15 , 0])
-
-    # stonehenge - very simple
-    # start_state = torch.tensor([-0.43, -0.75, 0.2, 0])
-    # end_state = torch.tensor([-0.26, 0.48, 0.15, 0])
+    start_state = torch.cat( [start_pos, torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
+    end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
     renderer = get_manual_nerf("empty")
-
-    #PARAM
-    # cfg = {"T_final": 2,
-    #         "steps": 20,
-    #         "lr": 0.001,#0.001,
-    #         "epochs_init": 500, #2000,
-    #         "fade_out_epoch": 0,#1000,
-    #         "fade_out_sharpness": 10,
-    #         "epochs_update": 500,
-    #         }
 
     cfg = {"T_final": 2,
             "steps": 20,
@@ -417,129 +323,50 @@ def main():
             "epochs_update": 500,
             }
 
-    traj = System(renderer, start_state, end_state, start_vel, end_vel, cfg)
+    traj = System(renderer, start_state, end_state, cfg)
     traj.learn_init()
-    traj.plot()
 
-    if False:
+
+    sim = Simulator(start_state)
+    quadplot = QuadPlot()
+
+    traj.plot(quadplot)
+    quadplot.show()
+
+
+    if True:
         for step in range(cfg['steps']):
             # # idealy something like this but we jank it for now
             # action = traj.get_actions()[0 or 1, :]
             # current_state = next_state(action)
 
+            # action = traj.get_actions()[0 or 1, :]
+
             # we jank it
+            print(traj.states.shape)
+
             current_state = traj.states[0, :].detach()
             randomness = torch.normal(mean= 0, std=torch.tensor([0.02, 0.02, 0.02, 0.1]) )
 
             measured_state = current_state + randomness
             traj.update_state( measured_state )
-            traj.learn_update()
+
+
+            # traj.learn_update()
             # traj.save_poses(???)
-            traj.plot()
+
+            quadplot = QuadPlot()
+            traj.plot(quadplot)
+
+            quadplot.trajectory( sim, "r" )
+            quadplot.show()
+
+
             print("sim step", step)
 
     #PARAM file to save the trajectory
     # traj.save_poses("paths/playground_testing.json")
     # traj.plot()
-
-@typechecked
-def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":..., 3]:
-    batch_dims = R.shape[:-2]
-
-    trace = torch.diagonal(R, dim1=-2, dim2=-1).sum(-1)
-
-    def acos_safe(x, eps=1e-4):
-        """https://github.com/pytorch/pytorch/issues/8069"""
-        slope = np.arccos(1-eps) / eps
-        # TODO: stop doing this allocation once sparse gradients with NaNs (like in
-        # th.where) are handled differently.
-        buf = torch.empty_like(x)
-        good = abs(x) <= 1-eps
-        bad = ~good
-        sign = torch.sign(x[bad])
-        buf[good] = torch.acos(x[good])
-        buf[bad] = torch.acos(sign * (1 - eps)) - slope*sign*(abs(x[bad]) - 1 + eps)
-        return buf
-
-    angle = acos_safe((trace - 1) / 2)[..., None]
-    # print(trace, angle)
-
-    vec = (
-        1
-        / (2 * torch.sin(angle + 1e-5))
-        * torch.stack(
-            [
-                R[..., 2, 1] - R[..., 1, 2],
-                R[..., 0, 2] - R[..., 2, 0],
-                R[..., 1, 0] - R[..., 0, 1],
-            ],
-            dim=-1,
-        )
-    )
-
-    # needed to overwrite nanes from dividing by zero
-    vec[angle[..., 0] == 0] = torch.zeros(3, device=R.device)
-
-    # eg TensorType["batch_size", "views", "max_objects", 3, 1]
-    rot_vec = (angle * vec)[...]
-
-    return rot_vec
-
-def astar(occupied, start, goal):
-    def heuristic(a, b):
-        return np.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2)
-
-    def inbounds(point):
-        for x, size in zip(point, occupied.shape):
-            if x < 0 or x >= size: return False
-        return True
-
-    neighbors = [( 1,0,0),(-1, 0, 0),
-                 ( 0,1,0),( 0,-1, 0),
-                 ( 0,0,1),( 0, 0,-1)]
-
-    close_set = set()
-
-    came_from = {}
-    gscore = {start: 0}
-
-    open_heap = []
-    heapq.heappush(open_heap, (heuristic(start, goal), start))
-
-    while open_heap:
-        current = heapq.heappop(open_heap)[1]
-
-        if current == goal:
-            data = []
-            while current in came_from:
-                data.append(current)
-                current = came_from[current]
-            assert current == start
-            data.append(current)
-            return reversed(data)
-
-        close_set.add(current)
-
-        for i, j, k in neighbors:
-            neighbor = (current[0] + i, current[1] + j, current[2] + k)
-            if not inbounds( neighbor ):
-                continue
-
-            if occupied[neighbor]:
-                continue
-
-            tentative_g_score = gscore[current] + 1
-
-            if tentative_g_score < gscore.get(neighbor, float("inf")):
-                came_from[neighbor] = current
-                gscore[neighbor] = tentative_g_score
-
-                fscore = tentative_g_score + heuristic(neighbor, goal)
-                node = (fscore, neighbor)
-                if node not in open_heap:
-                    heapq.heappush(open_heap, node) 
-
-    raise ValueError("Failed to find path!")
 
 
 if __name__ == "__main__":
