@@ -135,21 +135,24 @@ class System:
         ax_right.plot(self.get_cost().detach().numpy(), label="cost")
         ax.legend()
 
-    def plot_map(self, ax):
+    def plot_map(self, ax, color = "g", alpha = 1):
         ax.set_aspect('equal')
-        ax.set_xlim(-5, 5)
-        ax.set_ylim(-5, 5)
+        ax.set_xlim(-2, 5)
+        ax.set_ylim(-2, 5)
+        # ax.set_xlim(-5, 5)
+        # ax.set_ylim(-5, 5)
 
         # PLOT PATH
         # S, 1, 2
         pos = self.body_to_world( torch.zeros((1,2))).detach().numpy()
-        ax.plot( * pos.T )
+        ax.plot( * pos.T , alpha = alpha)
 
         # PLOTS BODY POINTS
         # S, P, 2
         body_points = self.body_to_world(self.robot_body).detach().numpy()
         for state_body in body_points:
-            ax.plot( *state_body.T, "g.", ms=72./ax.figure.dpi, alpha = 0.5)
+            # ax.plot( *state_body.T, color+".", ms=72./ax.figure.dpi, alpha = 0.5*alpha)
+            ax.plot( *state_body.T, color+".", ms=72./ax.figure.dpi, alpha = alpha)
 
         # PLOTS AXIS
         size = 0.5
@@ -162,7 +165,7 @@ class System:
             for i in range(1, 3):
                 ax.plot(state_axis[[0,i], 0],
                         state_axis[[0,i], 1],
-                        c=colors[i - 1],)
+                        c=colors[i - 1], alpha = alpha)
 
 
 def main():
@@ -177,15 +180,26 @@ def main():
 
     opt = torch.optim.Adam(traj.params(), lr=0.05)
 
-    for it in range(500):
+    fig = plt.figure(figsize=plt.figaspect(1))
+    ax_map = fig.add_subplot(1, 1, 1)
+
+    for it in range(1500):
         opt.zero_grad()
         loss = traj.total_cost()
         print(it, loss)
         loss.backward()
 
+        if it ==   0: traj.plot_map(ax_map, color = "r", alpha = 0.5)
+        if it == 100: traj.plot_map(ax_map, color = "y", alpha = 0.5)
+        if it == 400: traj.plot_map(ax_map, color = "c", alpha = 0.5)
+        if it == 500: traj.plot_map(ax_map, color = "b", alpha = 0.5)
+
         opt.step()
 
-    traj.plot()
+    plot_nerf(ax_map, nerf)
+    traj.plot_map(ax_map)
+    plt.show()
+    # traj.plot()
 
 
 
