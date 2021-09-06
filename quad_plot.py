@@ -120,21 +120,22 @@ class System:
         end_R     = self.end_state[6:15].reshape((1, 3, 3))
         end_omega = self.end_state[None, 15:]
 
-        # start, next, decision_states, last, end
-        next_pos = start_pos + start_v * self.dt
-        last_pos = end_pos   - end_v * self.dt
-
         next_R = next_rotation(start_R, start_omega, self.dt)
+
+        # start, next, decision_states, last, end
 
         start_accel = start_R @ torch.tensor([0,0,1.0]) * self.initial_accel[0] + self.g
         next_accel = next_R @ torch.tensor([0,0,1.0]) * self.initial_accel[1] + self.g
 
         next_vel = start_v + start_accel * self.dt
-        after_next_pos = next_pos + next_vel * self.dt
-
         after_next_vel = next_vel + next_accel * self.dt
+
+        next_pos = start_pos + start_v * self.dt
+        last_pos = end_pos   - end_v * self.dt
+        after_next_pos = next_pos + next_vel * self.dt
         after2_next_pos = after_next_pos + after_next_vel * self.dt
     
+        # position 2 and 3 are unused - but the atached roations are
         current_pos = torch.cat( [start_pos, next_pos, after_next_pos, after2_next_pos, self.states[2:, :3], last_pos, end_pos], dim=0)
 
         prev_pos = current_pos[:-1, :]
@@ -159,6 +160,11 @@ class System:
         z_axis_body = z_axis_body[2:-2, :]
 
         z_angle = self.states[:,3]
+        # print("current_pos", current_pos.shape)
+        # print("z_axis_body", z_axis_body.shape)
+        # print("z_angle", z_angle.shape)
+        # exit()
+
         in_plane_heading = torch.stack( [torch.sin(z_angle), -torch.cos(z_angle), torch.zeros_like(z_angle)], dim=-1)
 
         x_axis_body = torch.cross(z_axis_body, in_plane_heading, dim=-1)
@@ -306,7 +312,7 @@ class System:
         self.start_state = measured_state
         self.states = self.states[1:, :].detach().requires_grad_(True)
         self.initial_accel = actions[1:3, 0].detach().requires_grad_(True)
-        print(self.initial_accel.shape)
+        # print(self.initial_accel.shape)
 
 
     def plot(self, quadplot):
@@ -372,7 +378,6 @@ def main():
     # end_pos   = torch.tensor([ 1, 0, 0.5])
 
     start_R = vec_to_rot_matrix( torch.tensor([0.2,0.3,0]))
-    print(start_R)
 
     start_state = torch.cat( [start_pos, torch.tensor([0,1,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
@@ -398,6 +403,7 @@ def main():
 
     sim = Simulator(start_state)
     sim.dt = traj.dt
+    print("dt", sim.dt)
 
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())
@@ -406,11 +412,11 @@ def main():
     traj.plot(quadplot)
     quadplot.show()
 
-    traj.save_progress(filename)
+    # traj.save_progress(filename)
 
     if True:
         for step in range(cfg['steps']):
-            action = traj.get_actions()[step,:]
+            action = traj.get_actions()[step,:].detach()
             print(action)
             sim.advance(action)
 

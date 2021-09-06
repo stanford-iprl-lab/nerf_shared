@@ -101,18 +101,7 @@ class Simulator:
         domega = self.invI @ (tau - torch.cross(omega, self.I @ omega))
 
         # Propagate rotation matrix using exponential map of the angle displacements
-        angle = omega*dt
-        theta = torch.norm(angle, p=2)
-        if theta == 0:
-            exp_i = torch.eye(3)
-        else:
-            exp_i = torch.eye(3)
-            angle_norm = angle/theta
-            K = skew_matrix(angle_norm)
-
-            exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
-
-        next_R = R @ exp_i
+        next_R = next_rotation(R, omega, dt)
 
         next_state[0:3] = pos + v * dt
         next_state[3:6] = v + dv * dt
@@ -387,7 +376,7 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
 
     trace = torch.diagonal(R, dim1=-2, dim2=-1).sum(-1)
 
-    def acos_safe(x, eps=1e-6):
+    def acos_safe(x, eps=1e-7):
         """https://github.com/pytorch/pytorch/issues/8069"""
         slope = np.arccos(1-eps) / eps
         # TODO: stop doing this allocation once sparse gradients with NaNs (like in
@@ -400,6 +389,7 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
         buf[bad] = torch.acos(sign * (1 - eps)) - slope*sign*(abs(x[bad]) - 1 + eps)
         return buf
 
+    # angle = torch.acos((trace - 1) / 2)[..., None]
     angle = acos_safe((trace - 1) / 2)[..., None]
     # print(trace, angle)
 
