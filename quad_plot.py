@@ -488,12 +488,13 @@ def main():
 
     # traj = System(renderer, start_state, end_state, cfg)
     traj = System.load_progress(filename, renderer)
+    traj.epochs_update = 250
 
     # traj.a_star_init()
 
-    quadplot = QuadPlot()
-    traj.plot(quadplot)
-    quadplot.show()
+    # quadplot = QuadPlot()
+    # traj.plot(quadplot)
+    # quadplot.show()
 
     # traj.learn_init()
 
@@ -518,13 +519,14 @@ def main():
             action = traj.get_next_action().clone().detach()
             print(action)
 
-            state_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.0]*3 ))
+            state_noise = torch.normal(mean= 0, std=torch.tensor( [0.01]*3 + [0.01]*3 + [0]*9 + [0.005]*3 ))
+            # state_noise[3] += 0.0 #crosswind
             # sim.advance(action)
             sim.advance(action, state_noise)
             measured_state = sim.get_current_state().clone().detach()
 
-            measurement_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.0]*3 ))
-            # measured_state += measurement_noise
+            measurement_noise = torch.normal(mean= 0, std=torch.tensor( [0.01]*3 + [0.02]*3 + [0]*9 + [0.005]*3 ))
+            measured_state += measurement_noise
             traj.update_state(measured_state) 
 
             traj.learn_update()
