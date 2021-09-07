@@ -181,12 +181,11 @@ class System:
         after_next_vel = next_vel + next_accel * self.dt
 
         next_pos = start_pos + start_v * self.dt
-        last_pos = end_pos   - end_v * self.dt
         after_next_pos = next_pos + next_vel * self.dt
         after2_next_pos = after_next_pos + after_next_vel * self.dt
     
         # position 2 and 3 are unused - but the atached roations are
-        current_pos = torch.cat( [start_pos, next_pos, after_next_pos, after2_next_pos, self.states[2:, :3], last_pos, end_pos], dim=0)
+        current_pos = torch.cat( [start_pos, next_pos, after_next_pos, after2_next_pos, self.states[2:, :3], end_pos], dim=0)
 
         prev_pos = current_pos[:-1, :]
         next_pos = current_pos[1: , :]
@@ -199,6 +198,7 @@ class System:
 
         current_accel = (next_vel - prev_vel)/self.dt - self.g
 
+        # duplicate last accceleration - its not actaully used for anything (there is no action at last state)
         current_accel = torch.cat( [ current_accel, current_accel[-1,None,:] ], dim=0)
 
         accel_mag     = torch.norm(current_accel, dim=-1, keepdim=True)
@@ -206,14 +206,10 @@ class System:
         # needs to be pointing in direction of acceleration
         z_axis_body = current_accel/accel_mag
 
-        # remove first and last state - we already have their rotations constrained
-        z_axis_body = z_axis_body[2:-2, :]
+        # remove states with rotations already constrained
+        z_axis_body = z_axis_body[2:-1, :]
 
         z_angle = self.states[:,3]
-        # print("current_pos", current_pos.shape)
-        # print("z_axis_body", z_axis_body.shape)
-        # print("z_angle", z_angle.shape)
-        # exit()
 
         in_plane_heading = torch.stack( [torch.sin(z_angle), -torch.cos(z_angle), torch.zeros_like(z_angle)], dim=-1)
 
@@ -224,10 +220,7 @@ class System:
         # S, 3, 3 # assembled manually from basis vectors
         rot_matrix = torch.stack( [x_axis_body, y_axis_body, z_axis_body], dim=-1)
 
-        # next_R = next_rotation(start_R, start_omega, self.dt)
-        last_R = next_rotation(end_R, end_omega, -self.dt)
-
-        rot_matrix = torch.cat( [start_R, next_R, rot_matrix, last_R, end_R], dim=0)
+        rot_matrix = torch.cat( [start_R, next_R, rot_matrix, end_R], dim=0)
 
         current_omega = rot_matrix_to_vec( rot_matrix[1:, ...] @ rot_matrix[:-1, ...].swapdims(-1,-2) ) / self.dt
         current_omega = torch.cat( [ current_omega, end_omega], dim=0)
@@ -236,6 +229,7 @@ class System:
         next_omega = current_omega[1:, :]
 
         angular_accel = (next_omega - prev_omega)/self.dt
+        # duplicate last ang_accceleration - its not actaully used for anything (there is no action at last state)
         angular_accel = torch.cat( [ angular_accel, angular_accel[-1,None,:] ], dim=0)
 
         # S, 3    3,3      S, 3, 1
@@ -477,8 +471,8 @@ def main():
     start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
-    # filename = "line.plan"
-    # renderer = get_manual_nerf("empty")
+    filename = "line.plan"
+    renderer = get_manual_nerf("empty")
     # renderer = get_manual_nerf("cylinder")
 
     cfg = {"T_final": 2,
@@ -492,8 +486,8 @@ def main():
 
     # filename = "quad_cylinder_train.pt"
 
-    # traj = System(renderer, start_state, end_state, cfg)
-    traj = System.load_progress(filename, renderer)
+    traj = System(renderer, start_state, end_state, cfg)
+    # traj = System.load_progress(filename, renderer)
 
     # traj.a_star_init()
 
@@ -501,7 +495,7 @@ def main():
 #     traj.plot(quadplot)
 #     quadplot.show()
 
-    # traj.learn_init()
+    traj.learn_init()
     # print("test")
 
     quadplot = QuadPlot()
@@ -518,38 +512,32 @@ def main():
         sim.dt = traj.dt #Sim time step changes best on number of steps
 
         for step in range(cfg['steps']):
-            # action = traj.get_actions()[step,:].detach()
-            # print(action)
-            # sim.advance(action)
-
-            action = traj.get_next_action().clone().detach()
+            action = traj.get_actions()[step,:].detach()
             print(action)
+            sim.advance(action)
 
-            sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
-            measured_state = sim.get_current_state().clone().detach()
+            # action = traj.get_next_action().clone().detach()
+            # print(action)
 
-            randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
-            measured_state += randomness
-            traj.update_state(measured_state) 
+            # sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
+            # measured_state = sim.get_current_state().clone().detach()
 
-            traj.learn_update()
-
-            print("sim step", step)
-            if step % 10 !=0 or step == 0:
-                continue
-
-            quadplot = QuadPlot()
-            traj.plot(quadplot)
-            quadplot.trajectory( sim, "r" )
-            quadplot.trajectory( save, "b", show_cloud=False )
-            quadplot.show()
-
-            # # traj.save_poses(???)
-            # sim.advance_smooth(action, 10)
-            # randomness = torch.normal(mean= 0, std=torch.tensor([0.02]*18) )
-            # measured_state = traj.get_full_states()[1,:].detach()
-            # sim.add_state(measured_state)
+            # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
             # measured_state += randomness
+            # traj.update_state(measured_state) 
+
+            # traj.learn_update()
+
+            # print("sim step", step)
+            # if step % 10 !=0 or step == 0:
+            #     continue
+
+            # quadplot = QuadPlot()
+            # traj.plot(quadplot)
+            # quadplot.trajectory( sim, "r" )
+            # quadplot.trajectory( save, "b", show_cloud=False )
+            # quadplot.show()
+
 
         t_states = traj.get_full_states()   
         for i in range(sim.states.shape[0]):
