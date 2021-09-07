@@ -63,8 +63,8 @@ def get_endpoints():
     e_loc = [round(x,2) for x in bpy.data.objects['End'].location]
     bpy.data.objects['End'].location = Vector(e_loc)
     s = ""
-    s += 'start_state = torch.tensor(' + str( s_loc + [0] ) +")"
+    s += 'start_pos = torch.tensor(' + str( s_loc ) +")"
     s += "\n"
-    s += 'end_state = torch.tensor(' + str( e_loc + [0] ) +")"
+    s += 'end_pos = torch.tensor(' + str( e_loc ) +")"
     s += "\n"
     print(s)

@@ -142,9 +142,9 @@ def get_nerf(config = 'configs/playground.txt'):
     return renderer
 
 def main():
-    # nerf = get_nerf('configs/playground.txt')
+    nerf = get_nerf('configs/playground.txt')
     # nerf = get_nerf("configs/violin.txt")
-    nerf = get_nerf("configs/stonehenge.txt")
+    # nerf = get_nerf("configs/stonehenge.txt")
     # nerf = get_nerf("configs/church.txt")
 
     side = 100

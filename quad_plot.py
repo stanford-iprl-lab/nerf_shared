@@ -49,7 +49,7 @@ def get_manual_nerf(name):
 
 class System:
     @typechecked
-    def __init__(self, renderer, start_state, end_state, cfg):
+    def __init__(self, renderer, start_state: TensorType[18], end_state: TensorType[18], cfg):
         self.nerf = renderer.get_density
 
         self.T_final            = cfg['T_final']
@@ -98,7 +98,7 @@ class System:
 
     def a_star_init(self):
         #TODO WARNING
-        side = 100
+        side = 50
         linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
 
         # side, side, side, 3
@@ -112,8 +112,8 @@ class System:
         print(occupied.shape)
         grid_size = side//5
 
-        start_grid_float = grid_size*(self.start_states[1, :3] + 1)/2
-        end_grid_float   = grid_size*(self.end_states  [1, :3] + 1)/2
+        start_grid_float = grid_size*(self.start_state[:3] + 1)/2
+        end_grid_float   = grid_size*(self.end_state  [:3] + 1)/2
 
         print(start_grid_float)
         print(end_grid_float)
@@ -127,23 +127,22 @@ class System:
         squares =  2* (torch.tensor( path, dtype=torch.float)/grid_size) -1
         print(squares.shape)
 
-        #yaw
+        #adding way
         states = torch.cat( [squares, torch.zeros( (squares.shape[0], 1) ) ], dim=-1)
 
+        #prevents weird zero derivative issues
         randomness = torch.normal(mean= 0, std=0.001*torch.ones(states.shape) )
         states += randomness
 
+        # smooth path (diagram of which states are averaged)
         # 1 2 3 4 5 6 7
         # 1 1 2 3 4 5 6
         # 2 3 4 5 6 7 7
-
-        prev_smooth = torch.cat([states[0,None, :], states[:-1,:]], dim=0)
-        next_smooth = torch.cat([states[1:,:], states[-1,None, :], ], dim=0)
-
+        prev_smooth = torch.cat([states[0,None, :], states[:-1,:]],        dim=0)
+        next_smooth = torch.cat([states[1:,:],      states[-1,None, :], ], dim=0)
         states = (prev_smooth + next_smooth + states)/3
 
         self.states = states.clone().detach().requires_grad_(True)
-        #unfinished
 
     def params(self):
         return [self.initial_accel, self.states]
@@ -428,23 +427,29 @@ def main():
     # end_state = torch.tensor([-0.58, 0.66, 0.15, 0])
 
 
+    #playground
+    renderer = get_nerf('configs/playground.txt')
+    start_pos = torch.tensor([-0.0, -0.45, 0.12])
+    end_pos = torch.tensor([0.02, 0.58, 0.65])
+    filename = "playground.pt"
+
     #stonehenge
-    renderer = get_nerf('configs/stonehenge.txt')
+    # renderer = get_nerf('configs/stonehenge.txt')
     # start_state = torch.tensor([-0.06, -0.79, 0.2, 0])
     # end_state = torch.tensor([-0.46, 0.55, 0.16, 0])
 
-
-    start_pos = torch.tensor([-0.05,-0.9, 0.2])
-    end_pos   = torch.tensor([-1 , 0.7, 0.35])
+    # start_pos = torch.tensor([-0.05,-0.9, 0.2])
+    # end_pos   = torch.tensor([-1 , 0.7, 0.35])
     # start_pos = torch.tensor([-1, 0, 0.2])
     # end_pos   = torch.tensor([ 1, 0, 0.5])
 
-    start_R = vec_to_rot_matrix( torch.tensor([0.2,0.3,0]))
 
-    start_state = torch.cat( [start_pos, torch.tensor([0,1,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
+    start_R = vec_to_rot_matrix( torch.tensor([0.0,0.0,0]))
+
+    start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
-    renderer = get_manual_nerf("empty")
+    # renderer = get_manual_nerf("empty")
     # renderer = get_manual_nerf("cylinder")
 
     cfg = {"T_final": 2,
@@ -457,7 +462,6 @@ def main():
             }
 
     # filename = "quad_cylinder_train.pt"
-    filename = "quad_train.pt"
 
     traj = System(renderer, start_state, end_state, cfg)
 
