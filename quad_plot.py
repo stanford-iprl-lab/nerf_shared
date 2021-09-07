@@ -122,7 +122,7 @@ class System:
 
         opt_save = self.opt.state_dict()
         self.initial_accel = actions[1:3, 0].clone().detach().requires_grad_(True)
-        self.opt = torch.optim.Adam(self.params(), lr=self.lr)
+        self.opt = torch.optim.Adam(self.params(), lr=self.lr/100)
         self.opt.load_state_dict(opt_save)
 
 
@@ -530,12 +530,12 @@ def main():
             action = traj.get_next_action().clone().detach()
             print(action)
 
-            state_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
-            sim.advance(action)
+            state_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.0]*3 ))
+            # sim.advance(action)
             sim.advance(action, state_noise)
             measured_state = sim.get_current_state().clone().detach()
 
-            measurement_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
+            measurement_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.0]*3 ))
             # measured_state += measurement_noise
             traj.update_state(measured_state) 
 
