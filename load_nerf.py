@@ -143,11 +143,11 @@ def get_nerf(config = 'configs/playground.txt'):
 
 def main():
     # nerf = get_nerf('configs/playground.txt')
-    nerf = get_nerf("configs/violin.txt")
-    # nerf = get_nerf("configs/stonehenge.txt")
+    # nerf = get_nerf("configs/violin.txt")
+    nerf = get_nerf("configs/stonehenge.txt")
     # nerf = get_nerf("configs/church.txt")
 
-    side = 50
+    side = 100
     linspace = torch.linspace(-1,1, side)
 
     # side, side, side, 3

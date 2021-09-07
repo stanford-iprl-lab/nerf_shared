@@ -116,6 +116,15 @@ class System:
         randomness = torch.normal(mean= 0, std=0.001*torch.ones(states.shape) )
         states += randomness
 
+        # 1 2 3 4 5 6 7
+        # 1 1 2 3 4 5 6
+        # 2 3 4 5 6 7 7
+
+        prev_smooth = torch.cat([states[0,None, :], states[:-1,:]], dim=0)
+        next_smooth = torch.cat([states[1:,:], states[-1,None, :], ], dim=0)
+
+        states = (prev_smooth + next_smooth + states)/3
+
         self.states = states.clone().detach().requires_grad_(True)
         #unfinished
 
@@ -318,7 +327,6 @@ def main():
     # start_pos = torch.tensor([-0.05,-0.9, 0.2])
     # end_pos   = torch.tensor([-1 , 0.7, 0.05])
 
-    renderer = get_nerf('configs/violin.txt')
     # violin - simple
     # start_state = torch.tensor([-0.3 ,-0.5, 0.1, 0])
     # end_state   = torch.tensor([-0.35, 0.7, 0.15 , 0])
@@ -328,8 +336,24 @@ def main():
     # end_state   = torch.tensor([ 0.1,  0.6, 0.3 , 0])
 
     # violin - middle
-    start_state = torch.tensor([0,-0.5, 0.1, 0])
-    end_state   = torch.tensor([0, 0.7, 0.15 , 0])
+    # start_state = torch.tensor([0,-0.5, 0.1, 0])
+    # end_state   = torch.tensor([0, 0.7, 0.15 , 0])
+
+    #####
+    # violin - astar
+    # renderer = get_nerf('configs/violin.txt')
+    # start_state = torch.tensor([0.44, -0.23, 0.2, 0])
+    # end_state = torch.tensor([-0.58, 0.66, 0.15, 0])
+
+
+    #stonehenge
+    renderer = get_nerf('configs/stonehenge.txt')
+    # start_state = torch.tensor([0.24, -0.74, 0.2, 0])
+    # end_state = torch.tensor([-0.46, 0.55, 0.16, 0])
+
+    start_state = torch.tensor([-0.06, -0.79, 0.2, 0])
+    end_state = torch.tensor([-0.46, 0.55, 0.16, 0])
+
 
     start_vel = torch.tensor([0, 0, 0, 0])
     end_vel   = torch.tensor([0, 0, 0, 0])
@@ -338,9 +362,9 @@ def main():
 
     cfg = {"T_final": 2,
             "steps": 20,
-            "lr": 0.002,
+            "lr": 0.005,
             "epochs_init": 2500,
-            "fade_out_epoch": 500,
+            "fade_out_epoch": 0,
             "fade_out_sharpness": 10,
             "epochs_update": 200,
             }
@@ -352,9 +376,9 @@ def main():
 
 
 
-    # quadplot = QuadPlot()
-    # traj.plot(quadplot)
-    # quadplot.show()
+    quadplot = QuadPlot()
+    traj.plot(quadplot)
+    quadplot.show()
 
     traj.learn_init()
 

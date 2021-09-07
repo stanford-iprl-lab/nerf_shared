@@ -135,7 +135,7 @@ class System:
         ax_right.plot(self.get_cost().detach().numpy(), label="cost")
         ax.legend()
 
-    def plot_map(self, ax, color = "g", alpha = 1):
+    def plot_map(self, ax, color = "g", show_cloud = True, alpha = 1):
         ax.set_aspect('equal')
         ax.set_xlim(-2, 5)
         ax.set_ylim(-2, 5)
@@ -147,12 +147,13 @@ class System:
         pos = self.body_to_world( torch.zeros((1,2))).detach().numpy()
         ax.plot( * pos.T , alpha = alpha)
 
-        # PLOTS BODY POINTS
-        # S, P, 2
-        body_points = self.body_to_world(self.robot_body).detach().numpy()
-        for state_body in body_points:
-            # ax.plot( *state_body.T, color+".", ms=72./ax.figure.dpi, alpha = 0.5*alpha)
-            ax.plot( *state_body.T, color+".", ms=72./ax.figure.dpi, alpha = alpha)
+        if show_cloud:
+            # PLOTS BODY POINTS
+            # S, P, 2
+            body_points = self.body_to_world(self.robot_body).detach().numpy()
+            for state_body in body_points:
+                # ax.plot( *state_body.T, color+".", ms=72./ax.figure.dpi, alpha = 0.5*alpha)
+                ax.plot( *state_body.T, color+".", ms=72./ax.figure.dpi, alpha = alpha)
 
         # PLOTS AXIS
         size = 0.5
@@ -189,10 +190,10 @@ def main():
         print(it, loss)
         loss.backward()
 
-        if it ==   0: traj.plot_map(ax_map, color = "r", alpha = 0.5)
-        if it == 100: traj.plot_map(ax_map, color = "y", alpha = 0.5)
-        if it == 400: traj.plot_map(ax_map, color = "c", alpha = 0.5)
-        if it == 500: traj.plot_map(ax_map, color = "b", alpha = 0.5)
+        if it ==   0: traj.plot_map(ax_map, color = "r",show_cloud = False,  alpha = 0.5)
+        # if it == 100: traj.plot_map(ax_map, color = "y", alpha = 0.5)
+        if it == 400: traj.plot_map(ax_map, color = "b", show_cloud = False, alpha = 0.5)
+        # if it == 500: traj.plot_map(ax_map, color = "b", alpha = 0.5)
 
         opt.step()
 
