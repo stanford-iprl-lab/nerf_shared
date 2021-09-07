@@ -88,6 +88,7 @@ class System:
         # self.robot_body = torch.zeros(1,3)
 
         self.epoch = 0
+        self.opt = None
 
     @typechecked
     def full_to_reduced_state(self, state: TensorType[18]) -> TensorType[4]:
@@ -302,6 +303,7 @@ class System:
 
     def learn_init(self):
         opt = torch.optim.Adam(self.params(), lr=self.lr)
+        self.opt = opt
 
         try:
             for it in range(self.epochs_init):
@@ -321,6 +323,7 @@ class System:
 
     def learn_update(self):
         opt = torch.optim.Adam(self.params(), lr=self.lr)
+        self.opt = opt
 
         # it = 0
         # while 1:
@@ -413,6 +416,7 @@ class System:
                     "states": self.states,
                     "initial_accel":self.initial_accel,
                     "config_filename": config_filename,
+                    "opt": self.opt.state_dict() if self.opt != None else None,
                     }
         torch.save(to_save, filename)
 
@@ -431,6 +435,9 @@ class System:
         obj = cls(renderer, loaded_dict['start_state'], loaded_dict['end_state'], loaded_dict['cfg'])
         obj.states = loaded_dict['states'].requires_grad_(True)
         obj.initial_accel = loaded_dict['initial_accel'].requires_grad_(True)
+
+        if loaded_dict['opt'] != None:
+            obj
 
         return obj
 
@@ -480,22 +487,21 @@ def main():
             "epochs_init": 2500,
             "fade_out_epoch": 0,
             "fade_out_sharpness": 10,
-            "epochs_update": 200,
+            "epochs_update": 50,
             }
 
     # filename = "quad_cylinder_train.pt"
 
-    traj = System(renderer, start_state, end_state, cfg)
+    # traj = System(renderer, start_state, end_state, cfg)
+    traj = System.load_progress(filename, renderer)
 
-    # traj = System.load_progress(filename, renderer)
-
-    traj.a_star_init()
+    # traj.a_star_init()
 
 #     quadplot = QuadPlot()
 #     traj.plot(quadplot)
 #     quadplot.show()
 
-    traj.learn_init()
+    # traj.learn_init()
     # print("test")
 
     quadplot = QuadPlot()
@@ -503,41 +509,40 @@ def main():
     quadplot.show()
 
     # traj.save_progress(filename)
-    # print("saved to", filename)
 
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())
 
-    if False:
+    if True:
         sim = Simulator(start_state)
         sim.dt = traj.dt #Sim time step changes best on number of steps
 
         for step in range(cfg['steps']):
-            action = traj.get_actions()[step,:].detach()
-            print(action)
-            sim.advance(action)
-
-            # action = traj.get_next_action().clone().detach()
+            # action = traj.get_actions()[step,:].detach()
             # print(action)
+            # sim.advance(action)
 
-            # sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
-            # measured_state = sim.get_current_state().clone().detach()
+            action = traj.get_next_action().clone().detach()
+            print(action)
 
-            # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
-            # measured_state += randomness
-            # traj.update_state(measured_state) 
+            sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
+            measured_state = sim.get_current_state().clone().detach()
 
-            # traj.learn_update()
+            randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
+            measured_state += randomness
+            traj.update_state(measured_state) 
 
-            # print("sim step", step)
-            # if step % 10 !=0 or step == 0:
-            #     continue
+            traj.learn_update()
 
-            # quadplot = QuadPlot()
-            # traj.plot(quadplot)
-            # quadplot.trajectory( sim, "r" )
-            # quadplot.trajectory( save, "b", show_cloud=False )
-            # quadplot.show()
+            print("sim step", step)
+            if step % 10 !=0 or step == 0:
+                continue
+
+            quadplot = QuadPlot()
+            traj.plot(quadplot)
+            quadplot.trajectory( sim, "r" )
+            quadplot.trajectory( save, "b", show_cloud=False )
+            quadplot.show()
 
             # # traj.save_poses(???)
             # sim.advance_smooth(action, 10)

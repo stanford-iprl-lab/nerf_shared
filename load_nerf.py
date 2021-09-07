@@ -153,7 +153,7 @@ def show_voxels(output, kernel_size = 5):
     ax.voxels(output > 0.33,  edgecolor='k') #0.33 for violin
     plt.show()
 
-def show_projection(coods, outputs, dim="y", show_coords=True, max_project = False):
+def show_projection(coods, output, dim="y", show_coords=True, max_project = False):
 
     if dim == "x":
         into_page_dim, x_dim, y_dim  = 0,  1, 2
@@ -179,21 +179,27 @@ def show_projection(coods, outputs, dim="y", show_coords=True, max_project = Fal
     plt.show()
 
 def main():
-    nerf = get_nerf('configs/playground.txt')
+    # nerf = get_nerf('configs/playground.txt')
     # nerf = get_nerf("configs/violin.txt")
     # nerf = get_nerf("configs/stonehenge.txt")
-    # nerf = get_nerf("configs/church.txt")
+    nerf = get_nerf("configs/church.txt")
 
     side = 100
     linspace = torch.linspace(-1,1, side)
 
+    x_linspace = torch.linspace(-2,-1, side)
+    y_linspace = torch.linspace(-1,0, side)
+    z_linspace = torch.linspace(0,1, side)
+
+    coods = torch.stack( torch.meshgrid( x_linspace, y_linspace, z_linspace ), dim=-1)
+
     # side, side, side, 3
-    coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+    # coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
     output = nerf.get_density(coods)
 
-    show_voxels(output)
+    # show_voxels(output)
 
-    # show_projection(coods, outputs, dim="y", show_coords=True, max_project = False)
+    show_projection(coods, output, dim="z", show_coords=True, max_project = False)
 
 
 
