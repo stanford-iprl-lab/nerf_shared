@@ -481,14 +481,12 @@ def main():
             "epochs_init": 2500,
             "fade_out_epoch": 0,
             "fade_out_sharpness": 10,
-            "epochs_update": 50,
+            "epochs_update": 250,
             }
-
-    # filename = "quad_cylinder_train.pt"
 
     # traj = System(renderer, start_state, end_state, cfg)
     traj = System.load_progress(filename, renderer)
-    traj.epochs_update = 250
+    traj.epochs_update = 250 #change depending on noise
 
     # traj.a_star_init()
 
@@ -507,22 +505,19 @@ def main():
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())
 
-    if True:
+    if True: # for mpc control
         sim = Simulator(start_state)
         sim.dt = traj.dt #Sim time step changes best on number of steps
 
         for step in range(cfg['steps']):
-            # action = traj.get_actions()[step,:].detach()
-            # print(action)
-            # sim.advance(action)
-
             action = traj.get_next_action().clone().detach()
             print(action)
 
             state_noise = torch.normal(mean= 0, std=torch.tensor( [0.01]*3 + [0.01]*3 + [0]*9 + [0.005]*3 ))
             # state_noise[3] += 0.0 #crosswind
-            # sim.advance(action)
-            sim.advance(action, state_noise)
+
+            # sim.advance(action) # no noise
+            sim.advance(action, state_noise) #add noise
             measured_state = sim.get_current_state().clone().detach()
 
             measurement_noise = torch.normal(mean= 0, std=torch.tensor( [0.01]*3 + [0.02]*3 + [0]*9 + [0.005]*3 ))
@@ -541,18 +536,21 @@ def main():
             quadplot.trajectory( save, "b", show_cloud=False )
             quadplot.show()
 
+    if False:
+        sim = Simulator(start_state)
+        sim.dt = traj.dt #Sim time step changes best on number of steps
 
-        t_states = traj.get_full_states()   
-        for i in range(sim.states.shape[0]):
-            print(i)
-            print(t_states[i,:])
-            print(sim.states[i,:])
+        for step in range(cfg['steps']):
+            # for open loop control
+            action = traj.get_actions()[step,:].detach()
+            print(action)
+            sim.advance(action)
 
-        quadplot = QuadPlot()
-        traj.plot(quadplot)
-        quadplot.trajectory( sim, "r" )
-        quadplot.trajectory( save, "b", show_cloud=False )
-        quadplot.show()
+    quadplot = QuadPlot()
+    traj.plot(quadplot)
+    quadplot.trajectory( sim, "r" )
+    quadplot.trajectory( save, "b", show_cloud=False )
+    quadplot.show()
 
 
 
