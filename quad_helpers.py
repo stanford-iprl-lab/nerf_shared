@@ -1,4 +1,3 @@
-
 import torch
 torch.autograd.set_detect_anomaly(True)
 import torch.nn as nn
@@ -74,7 +73,6 @@ class Simulator:
     @typechecked
     def next_state(self, state: TensorType[18], action: TensorType[4], dt = None):
         #State is 18 dimensional [pos(3), vel(3), R (9), omega(3)] where pos, vel are in the world frame, R is the rotation from points in the body frame to world frame
-        # and omega are angular rates in the body frame
         if dt == None:
             dt = self.dt
 
@@ -107,7 +105,7 @@ class Simulator:
             exp_i = torch.eye(3)
         else:
             exp_i = torch.eye(3)
-            angle_norm = angle/theta
+            angle_norm = angle /theta
             K = skew_matrix(angle_norm)
 
             exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
@@ -210,7 +208,7 @@ def next_rotation(R: TensorType[3,3], omega: TensorType[3], dt) -> TensorType[3,
         exp_i = torch.eye(3)
     else:
         exp_i = torch.eye(3)
-        angle_norm = angle/theta
+        angle_norm = angle / theta
         K = skew_matrix(angle_norm)
         exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
 
@@ -405,7 +403,7 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
 
     vec = (
         1
-        / (2 * torch.sin(angle + 1e-5))
+        / (2 * torch.sin(angle+ 1e-5))
         * torch.stack(
             [
                 R[..., 2, 1] - R[..., 1, 2],
@@ -452,5 +450,3 @@ def skew_matrix(vec: TensorType["batch":..., 3]) -> TensorType["batch":..., 3,3]
     S[..., 2, 0] = -vec[..., 1]
     S[..., 2, 1] =  vec[..., 0]
     return S
-
-

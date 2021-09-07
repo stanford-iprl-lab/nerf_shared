@@ -98,6 +98,17 @@ def wrap_angle(val):
     pi = torch.tensor(np.pi)
     return torch.remainder(val + pi, (2 * pi)) - pi
 
+def add_noise_to_state(state, noise):
+    state = state.numpy()
+    rot = state[6:15]
+    vec = rot_matrix_to_vec(rot.reshape(3, 3))
+
+    condensed_state = np.concatenate((state[:6], vec, state[15:])) + noise
+
+    rot_noised = vec_to_rot_matrix(condensed_state[6:9])
+
+    return torch.tensor(np.concatenate((condensed_state[:6], rot_noised.reshape(-1), condensed_state[9:])), dtype=torch.float32)
+
 class Agent():
     def __init__(self, x0, sim_cfg, cfg, agent_type=None) -> None:
 
@@ -116,91 +127,37 @@ class Agent():
         self.I = cfg['I']
         self.invI = torch.inverse(self.I)
 
-    def pose2state(self):
-        if self.agent_type == 'planar':
-            pass
-
-        elif self.agent_type == 'quad':
-            pass
-
-        else:
-            print('System not identified')
-
-    def state2pose(self):
-        if self.agent_type == 'planar':
-            pass
-
-        elif self.agent_type == 'quad':
-            pass
-
-        else:
-            print('System not identified')
-
     def reset(self):
         self.x = self.x0
         return
 
-    def step(self, action):
+    def step(self, action, noise=None):
         #DYANMICS FUNCTION
-        '''
 
-        if self.agent_type is None:
-            #Naively add noise to the pose and treat that as ground truth.
-            std = 1*1e-2
-
-            rot = quaternion.as_rotation_vector(quaternion.from_rotation_matrix(pose[:3, :3]))
-            rot = rot + np.random.normal(0, std, size=(3, ))
-            trans = pose[:3, 3].reshape(3, ) + np.random.normal(0, std, size=(3, ))
-
-            new_rot = quaternion.as_rotation_matrix(quaternion.from_rotation_vector(rot))
-
-            new_pose = np.eye(4)
-            new_pose[:3, :3] = new_rot
-            new_pose[:3, 3] = trans
-        elif self.agent_type == 'planar':
-            pass
-
-        elif self.agent_type == 'quad':
-            state = self.pose2state(pose)
-            
-            if action is None:
-                next_state = state
-
-            else:
-                pass
-
-        else:
-            print('System not identified')
-        '''
         action = action.reshape(-1)
 
         newstate = self.drone_dynamics(self.x, action)
-        new_state = newstate.cpu().detach().numpy()
+
+        if noise is not None:
+            newstate_noise = add_noise_to_state(newstate.cpu().clone().detach(), noise)
+        else:
+            newstate_noise = newstate
+
+        self.x = newstate_noise
+
+        new_state = newstate_noise.clone().cpu().detach().numpy()
 
         new_pose = np.zeros((4, 4))
         new_pose[:3, :3] = (new_state[6:15]).reshape((3, 3))
         new_pose[:3, 3] = new_state[:3]
         new_pose[3, 3] = 1.
 
-        img = self.sim.get_image(new_pose)
+        new_pose = convert_blender_to_sim_pose(new_pose)
 
-        self.x = newstate
+        img = self.sim.get_image(new_pose)
 
         return new_pose, new_state, img[...,:3]
 
-        '''
-        new_state = self.drone_dynamics_test(self.x, action)
-        self.x = new_state
-
-        return new_state
-        '''
-
-    def step_planner_dynamics(self, pose):
-
-        new_pose = convert_blender_to_sim_pose(pose)
-        img = self.sim.get_image(new_pose)
-
-        return img[..., :3], new_pose
 
     def drone_dynamics(self, state, action):
         #State is 18 dimensional [pos(3), vel(3), R (9), omega(3)] where pos, vel are in the world frame, R is the rotation from points in the body frame to world frame
@@ -222,26 +179,24 @@ class Agent():
         sum_action = torch.zeros(3)
         sum_action[2] = fz
 
-        #dv = (torch.tensor([0.,0.,-self.mass*self.g]) + R @ sum_action)/self.mass
+        dv = (torch.tensor([0,0,-self.mass*self.g]) + R @ sum_action)/self.mass
 
         # The angular accelerations
         domega = self.invI @ (tau - torch.cross(omega, self.I @ omega))
 
         # Propagate rotation matrix using exponential map of the angle displacements
-        angle = omega * self.dt
+        angle = omega*self.dt
         theta = torch.norm(angle, p=2)
         if theta == 0:
             exp_i = torch.eye(3)
         else:
             exp_i = torch.eye(3)
-            angle_norm = angle/theta
+            angle_norm = angle / theta
             K = skew_matrix_torch(angle_norm)
 
             exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
 
-        next_R = R @ exp_i 
-
-        dv = (torch.tensor([0.,0.,-self.mass*self.g]) + next_R @ sum_action)/self.mass
+        next_R = R @ exp_i
 
         next_state[0:3] = pos + v * self.dt
         next_state[3:6] = v + dv * self.dt

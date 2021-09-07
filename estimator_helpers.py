@@ -1,11 +1,17 @@
 import numpy as np
+from numpy.lib.function_base import vectorize
 import torch
+torch.autograd.set_detect_anomaly(True)
 import torch.nn as nn
 import cv2
 import skimage
 import matplotlib.pyplot as plt
+import time
+import numpy.linalg as la
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+torch.manual_seed(0)
+np.random.seed(0)
 
 #Helper Functions
 def find_POI(img_rgb, DEBUG=False): # img - RGB image in range 0...255
@@ -13,6 +19,7 @@ def find_POI(img_rgb, DEBUG=False): # img - RGB image in range 0...255
     img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     sift = cv2.SIFT_create()
     keypoints = sift.detect(img_gray, None)
+
     xy = [keypoint.pt for keypoint in keypoints]
     xy = np.array(xy).astype(int)
     # Remove duplicate points
@@ -22,29 +29,7 @@ def find_POI(img_rgb, DEBUG=False): # img - RGB image in range 0...255
 
 img2mse = lambda x, y : torch.mean((x - y) ** 2)
 
-rot_psi = lambda phi: np.array([
-        [1, 0, 0, 0],
-        [0, np.cos(phi), -np.sin(phi), 0],
-        [0, np.sin(phi), np.cos(phi), 0],
-        [0, 0, 0, 1]])
-
-rot_theta = lambda th: np.array([
-        [np.cos(th), 0, -np.sin(th), 0],
-        [0, 1, 0, 0],
-        [np.sin(th), 0, np.cos(th), 0],
-        [0, 0, 0, 1]])
-
-rot_phi = lambda psi: np.array([
-        [np.cos(psi), -np.sin(psi), 0, 0],
-        [np.sin(psi), np.cos(psi), 0, 0],
-        [0, 0, 1, 0],
-        [0, 0, 0, 1]])
-
-trans_t = lambda t: np.array([
-        [1, 0, 0, 0],
-        [0, 1, 0, 0],
-        [0, 0, 1, t],
-        [0, 0, 0, 1]])
+quad_loss = lambda x, y, M: ((x - y).reshape((1, -1)) @ torch.inverse(M) @ (x - y).reshape((-1, 1)))
 
 def vec2ss_matrix(vector):  # vector to skewsym. matrix
 
@@ -58,26 +43,139 @@ def vec2ss_matrix(vector):  # vector to skewsym. matrix
 
     return ss_matrix
 
+def state2pose(vector):
+    pose = torch.zeros((4, 4))
+    rot_flat = vector[6:15]
+    rot = rot_flat.reshape((3, 3))
+    trans = vector[:3]
 
-class camera_transf(nn.Module):
+    pose[:3, :3] = rot
+    pose[:3, 3] = trans
+    pose[3, 3] = 1.
+
+    return pose
+
+
+def convert_blender_to_sim_pose(pose):
+    #Incoming pose converts body canonical frame to world canonical frame. We want a pose conversion from body
+    #sim frame to world sim frame.
+    world2sim = torch.tensor([[1., 0., 0.],
+                        [0., 0., 1.],
+                        [0., -1., 0.]])
+    body2cam = world2sim
+    rot = pose[:3, :3]          #Rotation from body to world canonical
+    trans = pose[:3, 3]
+
+    rot_c2s = world2sim @ rot @ body2cam.T
+    trans_sim = world2sim @ trans
+
+    c2w = torch.zeros((4, 4))
+    c2w[:3, :3] = rot_c2s
+    c2w[:3, 3] = trans_sim
+    c2w[3, 3] = 1.
+
+    return c2w
+
+def nearestPD(A):
+    """Find the nearest positive-definite matrix to input
+    A Python/Numpy port of John D'Errico's `nearestSPD` MATLAB code [1], which
+    credits [2].
+    [1] https://www.mathworks.com/matlabcentral/fileexchange/42885-nearestspd
+    [2] N.J. Higham, "Computing a nearest symmetric positive semidefinite
+    matrix" (1988): https://doi.org/10.1016/0024-3795(88)90223-6
+    """
+
+    B = (A + A.T) / 2
+    _, s, V = la.svd(B)
+
+    H = np.dot(V.T, np.dot(np.diag(s), V))
+
+    A2 = (B + H) / 2
+
+    A3 = (A2 + A2.T) / 2
+
+    if isPD(A3):
+        return A3
+
+    spacing = np.spacing(la.norm(A))
+    # The above is different from [1]. It appears that MATLAB's `chol` Cholesky
+    # decomposition will accept matrixes with exactly 0-eigenvalue, whereas
+    # Numpy's will not. So where [1] uses `eps(mineig)` (where `eps` is Matlab
+    # for `np.spacing`), we use the above definition. CAVEAT: our `spacing`
+    # will be much larger than [1]'s `eps(mineig)`, since `mineig` is usually on
+    # the order of 1e-16, and `eps(1e-16)` is on the order of 1e-34, whereas
+    # `spacing` will, for Gaussian random matrixes of small dimension, be on
+    # othe order of 1e-16. In practice, both ways converge, as the unit test
+    # below suggests.
+    I = np.eye(A.shape[0])
+    k = 1
+    while not isPD(A3):
+        mineig = np.min(np.real(la.eigvals(A3)))
+        A3 += I * (-mineig * k**2 + spacing)
+        k += 1
+
+    return A3
+
+
+def isPD(B):
+    """Returns true when input is positive-definite, via Cholesky"""
+    try:
+        _ = la.cholesky(B)
+        return True
+    except la.LinAlgError:
+        return False
+
+class state_transform(nn.Module):
     def __init__(self):
-        super(camera_transf, self).__init__()
-        self.w = nn.Parameter(torch.normal(0., 1e-6, size=(3,)))
-        self.v = nn.Parameter(torch.normal(0., 1e-6, size=(3,)))
-        self.theta = nn.Parameter(torch.normal(0., 1e-6, size=()))
+        super(state_transform, self).__init__()
+
+        #All parameters defined as offsets
+        self.psi = nn.Parameter(torch.normal(0., 1e-4, size=(1,)))
+        self.phi = nn.Parameter(torch.normal(0., 1e-4, size=(1,)))
+        self.v = nn.Parameter(torch.normal(0., 1e-4, size=(3,)))
+        self.theta = nn.Parameter(torch.normal(0., 1e-4, size=(1,)))
 
     def forward(self, x):
+        #x is initial estimate on the 18 dimensional state
+
+        P = torch.zeros((4, 4))
+        P[:3, :3] = x[6:15].reshape((3, 3))
+        P[:3, 3] = x[:3]
+        P[3, 3] = 1.
+
+        theta = self.theta
+        psi = 6.28*torch.sigmoid(self.psi)
+        phi = 3.14*torch.sigmoid(self.phi)
+
+        #convert w to spherical
+        w = torch.cat((torch.cos(psi)*torch.sin(phi), torch.sin(psi)*torch.sin(phi), torch.cos(phi)))
+
         exp_i = torch.zeros((4,4))
-        w_skewsym = vec2ss_matrix(self.w)
-        v_skewsym = vec2ss_matrix(self.v)
-        exp_i[:3, :3] = torch.eye(3) + torch.sin(self.theta) * w_skewsym + (1 - torch.cos(self.theta)) * torch.matmul(w_skewsym, w_skewsym)
-        exp_i[:3, 3] = torch.matmul(torch.eye(3) * self.theta + (1 - torch.cos(self.theta)) * w_skewsym + (self.theta - torch.sin(self.theta)) * torch.matmul(w_skewsym, w_skewsym), self.v)
+        w_skewsym = vec2ss_matrix(w)
+
+        #theta = self.theta
+        #exp_i = torch.zeros((4,4))
+        #w_skewsym = vec2ss_matrix(self.w)
+
+        exp_i[:3, :3] = torch.eye(3) + torch.sin(theta) * w_skewsym + (1 - torch.cos(theta)) * torch.matmul(w_skewsym, w_skewsym)
+        exp_i[:3, 3] = self.v #torch.matmul(torch.eye(3) * theta + (1 - torch.cos(theta)) * w_skewsym + (theta - torch.sin(theta)) * torch.matmul(w_skewsym, w_skewsym), self.v)
         exp_i[3, 3] = 1.
-        T_i = torch.matmul(exp_i, x)
-        return T_i
+
+        T_i = torch.matmul(exp_i, P)
+        #T_i = torch.matmul(P, exp_i)
+        
+        R_i = T_i[:3, :3]
+        t_i = T_i[:3, 3]
+
+        X = x.clone().detach()
+
+        X[:3] = t_i
+        X[6:15] = R_i.reshape(-1)
+
+        return X
 
 class Estimator():
-    def __init__(self, N_iter, batch_size, sampling_strategy, renderer, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.01, amount=0.8, delta_brightness=0.) -> None:
+    def __init__(self, N_iter, batch_size, sampling_strategy, renderer, agent, xt, sig, Q, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.01, amount=0.8, delta_brightness=0.) -> None:
     # Parameters
         self.batch_size = batch_size
         self.kernel_size = kernel_size
@@ -90,6 +188,12 @@ class Estimator():
         self.delta_brightness = delta_brightness
 
         self.renderer = renderer
+        self.agent = agent
+
+        #State initial estimate at time t=0
+        self.xt = xt            #Size 18
+        self.sig = sig          #State covariance 18x18
+        self.Q = Q              #Process noise covariance
 
         self.iter = N_iter
 
@@ -98,7 +202,14 @@ class Estimator():
         self.coords = np.asarray(np.stack(np.meshgrid(np.linspace(0, self.W - 1, self.W), np.linspace(0, self.H - 1, self.H)), -1),
                             dtype=int)
 
-    def estimate_pose(self, start_pose, obs_img, obs_img_pose):
+        #Storage for plots
+        self.pixel_losses = []
+        self.dyn_losses = []
+        self.rot_errors = []
+        self.trans_errors = []
+        self.sig_det = []
+
+    def optimize(self, start_state, sig, obs_img, obs_img_pose):
 
         obs_img = (np.array(obs_img) / 255.).astype(np.float32)
 
@@ -129,13 +240,15 @@ class Estimator():
         else:
             obs_img_noised = obs_img
 
-        obs_img_noised = (np.array(obs_img_noised) * 255).astype(np.uint8)
+        self.obs_img_noised = obs_img_noised
 
-        if self.sampling_strategy == 'interest_regions':
+        obs_img_noised_POI = (np.array(obs_img_noised) * 255).astype(np.uint8)
+
+        if self.sampling_strategy == 'interest_regions' or self.sampling_strategy == 'interest_points':
             # find points of interest of the observed image
-            POI = find_POI(obs_img_noised, False)  # xy pixel coordinates of points of interest (N x 2)
+            POI = find_POI(obs_img_noised_POI, False)  # xy pixel coordinates of points of interest (N x 2)
 
-        obs_img_noised = (np.array(obs_img_noised) / 255.).astype(np.float32)
+        #obs_img_noised = (np.array(obs_img_noised) / 255.).astype(np.float32)
 
         if self.sampling_strategy == 'interest_regions':
             # create sampling mask for interest region sampling strategy
@@ -149,14 +262,14 @@ class Estimator():
         # not_POI contains all points except of POI
         coords = self.coords.reshape(self.H * self.W, 2)
 
-        if self.sampling_strategy == 'interest_regions':
+        if self.sampling_strategy == 'interest_points':
             not_POI = set(tuple(point) for point in coords) - set(tuple(point) for point in POI)
             not_POI = np.array([list(point) for point in not_POI]).astype(int)
 
         # Create pose transformation model
-        start_pose = torch.Tensor(start_pose).to(device)
-        cam_transf = camera_transf().to(device)
-        optimizer = torch.optim.Adam(params=cam_transf.parameters(), lr=self.lrate, betas=(0.9, 0.999))
+        #start_state = torch.Tensor(start_state).to(device)
+        #state_trans = state_transform().to(device)
+        #optimizer = torch.optim.Adam(params=state_trans.parameters(), lr=self.lrate, betas=(0.9, 0.999))
 
         # calculate angles and translation of the observed image's pose
         phi_ref = np.arctan2(obs_img_pose[1,0], obs_img_pose[0,0])*180/np.pi
@@ -164,11 +277,32 @@ class Estimator():
         psi_ref = np.arctan2(obs_img_pose[2, 1], obs_img_pose[2, 2])*180/np.pi
         translation_ref = np.sqrt(obs_img_pose[0,3]**2 + obs_img_pose[1,3]**2 + obs_img_pose[2,3]**2)
 
+        propagated_state = start_state.detach()
+
+        new_lrate = self.lrate
+        best_loss = 1e5
+        best_state = start_state.detach()
+
         for k in range(self.iter):
+
+            # Create pose transformation model
+            start_state = torch.Tensor(start_state).to(device)
+            state_trans = state_transform().to(device)
+            optimizer = torch.optim.Adam(params=state_trans.parameters(), lr=self.lrate, betas=(0.9, 0.999))
 
             if self.sampling_strategy == 'random':
                 rand_inds = np.random.choice(coords.shape[0], size=self.batch_size, replace=False)
                 batch = coords[rand_inds]
+
+            elif self.sampling_strategy == 'interest_points':
+                if POI.shape[0] >= self.batch_size:
+                    rand_inds = np.random.choice(POI.shape[0], size=self.batch_size, replace=False)
+                    batch = POI[rand_inds]
+                else:
+                    batch = np.zeros((self.batch_size, 2), dtype=np.int)
+                    batch[:POI.shape[0]] = POI
+                    rand_inds = np.random.choice(not_POI.shape[0], size=self.batch_size-POI.shape[0], replace=False)
+                    batch[POI.shape[0]:] = not_POI[rand_inds]
 
             elif self.sampling_strategy == 'interest_regions':
                 rand_inds = np.random.choice(interest_regions.shape[0], size=self.batch_size, replace=False)
@@ -178,28 +312,51 @@ class Estimator():
                 print('Unknown sampling strategy')
                 return
 
+            self.batch = batch
+
             target_s = obs_img_noised[batch[:, 1], batch[:, 0]]
             target_s = torch.Tensor(target_s).to(device)
-            pose = cam_transf(start_pose)
 
-            rgb = self.renderer.get_img_from_pix(batch, pose, HW=False)
+            predict_state = state_trans(start_state)
+
+            pose = state2pose(predict_state)
+
+            sim_pose = convert_blender_to_sim_pose(pose)
+
+            rgb = self.renderer.get_img_from_pix(batch, sim_pose, HW=False)
+
+            #Process loss. 
+            loss_dyn = quad_loss(predict_state, propagated_state, sig)
 
             optimizer.zero_grad()
-            #print('Shape', self.H, self.W, obs_img.shape)
-            loss = img2mse(rgb, target_s)
+
+            loss_rgb = img2mse(rgb, target_s)
+
+            loss = loss_rgb + loss_dyn
+
             loss.backward()
             optimizer.step()
+
+            if loss.cpu().detach().numpy() < best_loss and k > 0:
+                best_loss = loss.cpu().detach().numpy()
+                best_state = predict_state
+
+            start_state = state_trans(start_state)
+            start_state = start_state.cpu().detach().numpy()
 
             new_lrate = self.lrate * (0.8 ** ((k + 1) / 100))
             for param_group in optimizer.param_groups:
                 param_group['lr'] = new_lrate
 
-            if (k + 1) % 20 == 0 or k == 0:
-                print('Step: ', k)
-                print('Loss: ', loss)
+            with torch.no_grad():
+                if (k + 1) % 20 == 0 or k == 0:
+                    print('Step: ', k)
+                    print('Loss: ', loss)
+                    print('Pixel Loss', loss_rgb)
+                    print('Dynamical Loss', loss_dyn)
+                    print('Error between propagated and current', torch.norm(predict_state-propagated_state))
 
-                with torch.no_grad():
-                    pose_dummy = pose.cpu().detach().numpy()
+                    pose_dummy = sim_pose.cpu().detach().numpy()
                     # calculate angles and translation of the optimized pose
                     phi = np.arctan2(pose_dummy[1, 0], pose_dummy[0, 0]) * 180 / np.pi
                     theta = np.arctan2(-pose_dummy[2, 0], np.sqrt(pose_dummy[2, 1] ** 2 + pose_dummy[2, 2] ** 2)) * 180 / np.pi
@@ -212,14 +369,88 @@ class Estimator():
                     psi_error = abs(psi_ref - psi) if abs(psi_ref - psi)<300 else abs(abs(psi_ref - psi)-360)
                     rot_error = phi_error + theta_error + psi_error
                     translation_error = abs(translation_ref - translation)
+
                     print('Rotation error: ', rot_error)
                     print('Translation error: ', translation_error)
                     print('-----------------------------------')
 
-                    if (k+1) % 300 == 0:
-                        img_dummy = self.renderer.get_img_from_pose(pose)
-                        plt.imsave('./paths/rendered_img.png', img_dummy.cpu().detach().numpy())
-        
-        self.pose_prior = pose.cpu().detach().numpy()
+                #Store data
+                self.pixel_losses.append(loss_rgb.cpu().detach().numpy().reshape(-1))
+                self.dyn_losses.append(loss_dyn.cpu().detach().numpy().reshape(-1))
+                self.rot_errors.append(rot_error)
+                self.trans_errors.append(translation_error)
+            
+                if (k+1) % 300 == 0:
+                    img_dummy = self.renderer.get_img_from_pose(sim_pose)
+                    plt.figure()
+                    plt.imsave('./paths/rendered_img.png', img_dummy.cpu().detach().numpy())
+                    plt.close()
 
-        return pose.cpu().detach().numpy()
+        return best_state.clone().detach()
+
+    def measurement_function(self, state, start_state, sig):
+
+        target_s = self.obs_img_noised[self.batch[:, 1], self.batch[:, 0]]
+        target_s = torch.Tensor(target_s).to(device)
+
+        pose = state2pose(state)
+
+        sim_pose = convert_blender_to_sim_pose(pose)
+
+        rgb = self.renderer.get_img_from_pix(self.batch, sim_pose, HW=False)
+
+        #Process loss. 
+        loss_dyn = quad_loss(state, start_state, sig)
+
+        loss_rgb = img2mse(rgb, target_s)
+
+        loss = loss_rgb + loss_dyn
+
+        return loss
+
+    def estimate_state(self, obs_img, obs_img_pose, action):
+        # Computes Jacobian w.r.t dynamics are time t-1. Then update state covariance Sig_{t|t-1}.
+        # Perform grad. descent on J = measurement loss + process loss
+        # Compute state covariance Sig_{t} by hessian at state at time t.
+
+        with torch.no_grad():
+            #Propagated dynamics. x t|t-1
+            start_state = self.agent.drone_dynamics(self.xt, action)
+
+            #State estimate at t-1 is self.xt. Find jacobian wrt dynamics
+            t1 = time.time()
+            A = torch.autograd.functional.jacobian(lambda x: self.agent.drone_dynamics(x, action), self.xt)
+            t2 = time.time()
+            print('Elapsed time for Jacobian', t2-t1)
+            print('Jacobian', A)
+
+            #Propagate covariance
+            sig_prop = A @ self.sig @ A.T + self.Q
+
+        #Argmin of total cost. Encapsulate this argmin optimization as a function call
+        xt = self.optimize(torch.tensor(start_state), torch.tensor(sig_prop), obs_img, obs_img_pose)
+
+        with torch.no_grad():
+            #Update state estimate
+            self.xt = xt
+
+            #Hessian to get updated covariance
+            t3 = time.time()
+            hess = torch.autograd.functional.hessian(lambda x: self.measurement_function(x, start_state, sig_prop), self.xt)
+
+            #Turn covariance into positive definite
+            hess_np = hess.cpu().detach().numpy()
+            hess = nearestPD(hess_np)
+
+            t4 = time.time()
+            print('Elapsed time for hessian', t4-t3)
+            #print('Hessian', sig)
+
+            #self.sig_det.append(np.linalg.det(sig.cpu().numpy()))
+
+            #Update state covariance
+            self.sig = torch.inverse(torch.tensor(hess))
+
+            print('Start state', start_state)
+
+        return self.xt.clone().cpu().detach().numpy()

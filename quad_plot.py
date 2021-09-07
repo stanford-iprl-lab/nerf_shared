@@ -1,4 +1,5 @@
 import torch
+from torch._C import device
 torch.autograd.set_detect_anomaly(True)
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,12 +18,13 @@ patch_typeguard()
 
 from load_nerf import get_nerf
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.manual_seed(0)
 np.random.seed(0)
 
 from quad_helpers import Simulator, QuadPlot
 from quad_helpers import rot_matrix_to_vec, vec_to_rot_matrix, next_rotation
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # # hard coded "nerf" for testing. see below to import real nerf
 def get_manual_nerf(name):
@@ -80,7 +82,7 @@ class System:
         #PARAM this sets the shape of the robot body point cloud
         body = torch.stack( torch.meshgrid( torch.linspace(-0.05, 0.05, 10),
                                             torch.linspace(-0.05, 0.05, 10),
-                                            torch.linspace(-0.02, 0.02,  5)), dim=-1).to(device)
+                                            torch.linspace(-0.02, 0.02,  5)), dim=-1)
         self.robot_body = body.reshape(-1, 3)
         # self.robot_body = torch.zeros(1,3)
 
@@ -217,18 +219,18 @@ class System:
     def get_state_cost(self) -> TensorType["states"]:
         pos, vel, accel, rot_matrix, omega, angular_accel, actions = self.calc_everything()
 
-        fz = actions[:, 0]
-        torques = torch.norm(actions[:, 1:], dim=-1)
+        fz = actions[:, 0].to(device)
+        torques = torch.norm(actions[:, 1:], dim=-1).to(device)
 
         # multiplied by distance to prevent it from just speed tunnelling
-        distance = torch.sum( vel**2 + 1e-5, dim = -1)**0.5
-        density = self.nerf( self.body_to_world(self.robot_body) )**2
+        distance = (torch.sum( vel**2 + 1e-5, dim = -1)**0.5).to(device)
+        density = (self.nerf( self.body_to_world(self.robot_body) )**2).to(device)
         colision_prob = torch.mean( density, dim = -1) * distance
 
         if self.epoch < self.fade_out_epoch:
-            t = torch.linspace(0,1, colision_prob.shape[0]).to(device)
+            t = torch.linspace(0,1, colision_prob.shape[0])
             position = self.epoch/self.fade_out_epoch
-            mask = torch.sigmoid(self.fade_out_sharpness * (position - t))
+            mask = torch.sigmoid(self.fade_out_sharpness * (position - t)).to(device)
             colision_prob = colision_prob * mask
 
         #dynamics residual loss - make sure acceleration point in body frame z axis
@@ -315,10 +317,10 @@ class System:
         ax = quadplot.ax_graph
 
         pos, vel, accel, _, omega, _, actions = self.calc_everything()
-        actions = actions.detach().numpy()
-        pos = pos.detach().numpy()
-        vel = vel.detach().numpy()
-        omega = omega.detach().numpy()
+        actions = actions.cpu().detach().numpy()
+        pos = pos.cpu().detach().numpy()
+        vel = vel.cpu().detach().numpy()
+        omega = omega.cpu().detach().numpy()
 
         ax.plot(actions[...,0], label="fz")
         ax.plot(actions[...,1], label="tx")
@@ -340,25 +342,28 @@ class System:
         ax_right = quadplot.ax_graph_right
 
         total_cost, colision_loss, dynamics_residual = self.get_state_cost()
-        ax_right.plot(total_cost.detach().numpy(), 'black', label="cost")
-        ax_right.plot(colision_loss.detach().numpy(), 'cyan', label="colision")
+        ax_right.plot(total_cost.cpu().detach().numpy(), 'black', label="cost")
+        ax_right.plot(colision_loss.cpu().detach().numpy(), 'cyan', label="colision")
         ax.legend()
 
     def save_poses(self, filename):
         positions, _, _, rot_matrix, _, _, _ = self.calc_everything()
+        poses = []
+        pose_dict = {}
         with open(filename,"w+") as f:
             for pos, rot in zip(positions, rot_matrix):
                 pose = np.zeros((4,4))
                 pose[:3, :3] = rot.cpu().detach().numpy()
                 pose[:3, 3]  = pos.cpu().detach().numpy()
-                pose[3,3] = 1.
+                pose[3,3] = 1
+
                 poses.append(pose.tolist())
             pose_dict["poses"] = poses
             json.dump(pose_dict, f)
-        print('Total poses saved', num_poses)
 
     def save_progress(self, filename):
-        os.remove(filename)
+        if os.path.isfile(filename) is True:
+            os.remove(filename)
         torch.save(self.states, filename)
 
     def load_progress(self, filename):
@@ -366,10 +371,10 @@ class System:
 
 def main():
 
-    # renderer = get_nerf('configs/stonehenge.txt')
+    renderer = get_nerf('configs/playground.txt')
     # stonehenge - simple
     start_pos = torch.tensor([-0.05,-0.9, 0.2])
-    end_pos   = torch.tensor([-1 , 0.7, 0.35])
+    end_pos   = torch.tensor([-0.5,0.9, 0.7])
     # start_pos = torch.tensor([-1, 0, 0.2])
     # end_pos   = torch.tensor([ 1, 0, 0.5])
 
@@ -379,13 +384,13 @@ def main():
     start_state = torch.cat( [start_pos, torch.tensor([0,1,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
-    renderer = get_manual_nerf("empty")
-    # renderer = get_manual_nerf("cylinder")
+    #renderer = get_manual_nerf("empty")
+    #renderer = get_manual_nerf("cylinder")
 
     cfg = {"T_final": 2,
             "steps": 20,
             "lr": 0.01,
-            "epochs_init": 2500,
+            "epochs_init": 25,
             "fade_out_epoch": 500,
             "fade_out_sharpness": 10,
             "epochs_update": 200,
@@ -412,31 +417,31 @@ def main():
 
     if True:
         for step in range(cfg['steps']):
-            action = traj.get_actions()[step,:]
-            print(action)
-            sim.advance(action)
+            #action = traj.get_actions()[step,:].detach()
+            #print(action)
+            #sim.advance(action)
 
-            # action = traj.get_next_action().clone().detach()
+            action = traj.get_next_action().clone().detach()
             # print(action)
 
-            # sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
-            # measured_state = sim.get_current_state().clone().detach()
+            sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
+            measured_state = sim.get_current_state().clone().detach()
 
-            # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
-            # measured_state += randomness
-            # traj.update_state(measured_state) 
+            #randomness = torch.normal(mean= 0, std=torch.tensor( [0.1]*3 + [0.1]*3 + [0]*9 + [0.1]*3 ))
+            #measured_state += randomness
+            traj.update_state(measured_state) 
 
-            # traj.learn_update()
+            traj.learn_update()
 
-            # print("sim step", step)
+            print("sim step", step)
             # if step % 10 !=0 or step == 0:
             #     continue
 
-            # quadplot = QuadPlot()
-            # traj.plot(quadplot)
-            # quadplot.trajectory( sim, "r" )
-            # quadplot.trajectory( save, "b", show_cloud=False )
-            # quadplot.show()
+            quadplot = QuadPlot()
+            traj.plot(quadplot)
+            quadplot.trajectory( sim, "r" )
+            quadplot.trajectory( save, "b", show_cloud=False )
+            quadplot.show()
 
             # # traj.save_poses(???)
             # sim.advance_smooth(action, 10)
@@ -445,7 +450,8 @@ def main():
             # sim.add_state(measured_state)
             # measured_state += randomness
 
-        t_states = traj.get_full_states()   
+        t_states = traj.get_full_states()  
+        print(sim.states.shape[0]) 
         for i in range(sim.states.shape[0]):
             print(i)
             print(t_states[i,:])
@@ -460,6 +466,7 @@ def main():
     #PARAM file to save the trajectory
     # traj.save_poses("paths/playground_testing.json")
     # traj.plot()
+
 
 if __name__ == "__main__":
     main()
