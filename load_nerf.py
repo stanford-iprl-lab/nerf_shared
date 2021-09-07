@@ -137,7 +137,7 @@ def get_nerf(config = 'configs/playground.txt'):
     chunk = args.chunk
     hwf = None, None, None
     K = None
-    renderer = Renderer(hwf, K, chunk, render_kwargs_train)
+    renderer = Renderer(hwf, K, chunk, render_kwargs_train, config)
 
     return renderer
 

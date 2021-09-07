@@ -7,7 +7,7 @@ from mathutils import Matrix
 
 #filepath = bpy.path.abspath('//..') + "/playground_testing.json"
 
-object_to_copy = bpy.data.objects["Start"]
+object_to_copy = bpy.data.objects["Drone"]
 
 
 path_parent = object_to_copy.copy()

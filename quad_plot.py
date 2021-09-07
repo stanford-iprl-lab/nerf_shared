@@ -6,6 +6,7 @@ import numpy as np
 
 import json
 import os
+import pickle
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -50,8 +51,10 @@ def get_manual_nerf(name):
 class System:
     @typechecked
     def __init__(self, renderer, start_state: TensorType[18], end_state: TensorType[18], cfg):
+        self.renderer = renderer
         self.nerf = renderer.get_density
 
+        self.cfg                = cfg
         self.T_final            = cfg['T_final']
         self.steps              = cfg['steps']
         self.lr                 = cfg['lr']
@@ -396,12 +399,41 @@ class System:
     def save_progress(self, filename):
         try:
             os.remove(filename)
-        except:
+        except FileNotFoundError:
             pass
-        torch.save(self.states, filename)
 
-    def load_progress(self, filename):
-        self.states = torch.load(filename).clone().requires_grad_(True)
+        if hasattr(self.renderer, "config_filename"):
+            config_filename = self.renderer.config_filename
+        else:
+            config_filename = None
+
+        to_save = {"cfg": self.cfg,
+                    "start_state": self.start_state,
+                    "end_state": self.end_state,
+                    "states": self.states,
+                    "initial_accel":self.initial_accel,
+                    "config_filename": config_filename,
+                    }
+        torch.save(to_save, filename)
+        # with open(filename,"w+") as f:
+        #     pickle.dump(self, f)
+
+    @classmethod
+    def load_progress(cls, filename, renderer=None):
+        # with open(filename,"r") as f:
+        #     return pickle.load(f)
+
+        loaded_dict = torch.load(filename)
+
+        if renderer == None:
+            assert loaded_dict['config_filename'] is not None
+            renderer = load_nerf(loaded_dict['config_filename'])
+
+        obj = cls(renderer, loaded_dict['start_state'], loaded_dict['end_state'], loaded_dict['cfg'])
+        obj.states = loaded_dict['states'].requires_grad_(True)
+        obj.initial_accel = loaded_dict['initial_accel'].requires_grad_(True)
+
+        return obj
 
 def main():
 
@@ -412,10 +444,16 @@ def main():
 
 
     #playground
+    filename = "playground.plan"
     renderer = get_nerf('configs/playground.txt')
-    start_pos = torch.tensor([-0.0, -0.45, 0.12])
+
+    # 2d across
+    # start_pos = torch.tensor([-0.0, -0.45, 0.12])
+    # end_pos = torch.tensor([0.02, 0.58, 0.65])
+
+    # under slide
+    start_pos = torch.tensor([-0.3, -0.27, 0.06])
     end_pos = torch.tensor([0.02, 0.58, 0.65])
-    filename = "playground.pt"
 
     #stonehenge
     # renderer = get_nerf('configs/stonehenge.txt')
@@ -433,7 +471,8 @@ def main():
     start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
-    # renderer = get_manual_nerf("empty")
+    filename = "line.plan"
+    renderer = get_manual_nerf("empty")
     # renderer = get_manual_nerf("cylinder")
 
     cfg = {"T_final": 2,
@@ -447,24 +486,25 @@ def main():
 
     # filename = "quad_cylinder_train.pt"
 
-    traj = System(renderer, start_state, end_state, cfg)
+    # traj = System(renderer, start_state, end_state, cfg)
 
-    # traj.load_progress(filename)
+    traj = System.load_progress(filename, renderer)
 
     # traj.a_star_init()
 
-    quadplot = QuadPlot()
-    traj.plot(quadplot)
-    quadplot.show()
+#     quadplot = QuadPlot()
+#     traj.plot(quadplot)
+#     quadplot.show()
 
     traj.learn_init()
-    print("test")
+    # print("test")
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
     quadplot.show()
 
-    # traj.save_progress(filename)
+    traj.save_progress(filename)
+    print("saved to", filename)
 
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())

@@ -9,7 +9,7 @@ patch_typeguard()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Renderer():
-    def __init__(self, hwf, K, chunk, render_kwargs) -> None:
+    def __init__(self, hwf, K, chunk, render_kwargs, config_filename = None) -> None:
         self.hwf = hwf
         self.K = K
         self.chunk = chunk
@@ -19,6 +19,8 @@ class Renderer():
         self.network_fn = render_kwargs["network_fn"]
         self.network_fine = render_kwargs["network_fine"]
         self.network_query_fn = render_kwargs["network_query_fn"]
+
+        self.config_filename = config_filename
 
     def get_img_from_pix(self, pix: TensorType['NumPixels', 2], pose: TensorType[4, 4], HW=True) -> TensorType['NumPixels', 3]:
         "Returns colors of subsampled image at the pixels specified by the input ([[x1, y1], [x2, y2], ...])"
