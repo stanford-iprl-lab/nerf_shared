@@ -97,35 +97,33 @@ class System:
         return torch.cat( [pos, torch.tensor([angle]) ], dim = -1).detach()
 
     def a_star_init(self):
-        #TODO WARNING
-        side = 50
+        side = 100 #PARAM grid size
         linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
 
         # side, side, side, 3
         coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
-            
+
+        kernel_size = 5 # 100/5 = 20. scene size of 2 gives a box size of 2/20 = 0.1 = drone size
         output = self.nerf(coods)
-        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
-        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
+        maxpool = torch.nn.MaxPool3d(kernel_size = kernel_size)
+        #PARAM cut off such that neural network outputs zero (pre shifted sigmoid)
+
         # 20, 20, 20
+        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
 
-        print(occupied.shape)
-        grid_size = side//5
+        grid_size = side//kernel_size
 
+        #convert to index cooredinates
         start_grid_float = grid_size*(self.start_state[:3] + 1)/2
         end_grid_float   = grid_size*(self.end_state  [:3] + 1)/2
-
-        print(start_grid_float)
-        print(end_grid_float)
-        
         start = tuple(int(start_grid_float[i]) for i in range(3) )
         end =   tuple(int(end_grid_float[i]  ) for i in range(3) )
-        print(start, end)
 
+        print(start, end)
         path = astar(occupied, start, end)
 
+        # convert from index cooredinates
         squares =  2* (torch.tensor( path, dtype=torch.float)/grid_size) -1
-        print(squares.shape)
 
         #adding way
         states = torch.cat( [squares, torch.zeros( (squares.shape[0], 1) ) ], dim=-1)
@@ -284,34 +282,20 @@ class System:
             mask = torch.sigmoid(self.fade_out_sharpness * (position - t))
             colision_prob = colision_prob * mask
 
-        #dynamics residual loss - make sure acceleration point in body frame z axis
+        ##dynamics residual loss - make sure acceleration point in body frame z axis
+        ## S, 3, _     =   S, 3, 3  @ S, 3, _
+        #body_frame_accel   = ( rot_matrix.swapdims(-1,-2) @ accel[:,:,None]) [:,:,0]
+        ## pick out the ones we want to constrain (the rest are already constrained
+        #residue_angle = torch.atan2( torch.norm(body_frame_accel[:,:2], dim =-1 ) , body_frame_accel[:,2])
+        #print("residue_angle", residue_angle)
 
-        # S, 3, _     =   S, 3, 3  @ S, 3, _
-        body_frame_accel   = ( rot_matrix.swapdims(-1,-2) @ accel[:,:,None]) [:,:,0]
-        # pick out the ones we want to constrain (the rest are already constrained
-        residue_angle = torch.atan2( torch.norm(body_frame_accel[:,:2], dim =-1 ) , body_frame_accel[:,2])
-
-        # if not torch.allclose( residue_angle[2:-3], torch.zeros((residue_angle.shape[0] - 5))):
-        #     print("isclose", torch.isclose( residue_angle[2:-3], torch.zeros((residue_angle.shape[0] - 5))))
-        print("residue_angle", residue_angle)
-
-            # print("rot", rot_matrix[3,:,:])
-            # print("accel", accel[3,:])
-            # print("body_accel", body_frame_accel[3,:])
-            # raise False
-
-        residue_angle = residue_angle[ torch.tensor([0,1, -3, -2,-1]) ]
-        self.max_residual = torch.max( torch.abs(residue_angle) )
-
-        dynamics_residual = torch.mean( torch.abs(residue_angle)**2 )
 
         #PARAM cost function shaping
-        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6, 0# 1e5 * dynamics_residual
+        return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6
 
     def total_cost(self):
-        total_cost, colision_loss, dynamics_residual = self.get_state_cost()
-        print("dynamics_residual", dynamics_residual)
-        return torch.mean(total_cost) + dynamics_residual
+        total_cost, colision_loss  = self.get_state_cost()
+        return torch.mean(total_cost)
 
     def learn_init(self):
         opt = torch.optim.Adam(self.params(), lr=self.lr)
@@ -392,7 +376,7 @@ class System:
 
         ax_right = quadplot.ax_graph_right
 
-        total_cost, colision_loss, dynamics_residual = self.get_state_cost()
+        total_cost, colision_loss = self.get_state_cost()
         ax_right.plot(total_cost.detach().numpy(), 'black', label="cost")
         ax_right.plot(colision_loss.detach().numpy(), 'cyan', label="colision")
         ax.legend()
