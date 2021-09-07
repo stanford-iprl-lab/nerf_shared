@@ -21,6 +21,7 @@ from load_nerf import get_nerf
 torch.manual_seed(0)
 np.random.seed(0)
 
+import time
 
 class Simulator:
 
@@ -189,7 +190,22 @@ class QuadPlot:
         self.ax_graph.plot(*arg, **kawrgs)
 
     def show(self):
+        # sadly this messed with using ctrl-c after running
         plt.show()
+        # plt.ion()
+        # show = True
+
+        # def handle_close(event):
+        #     nonlocal show
+        #     show = False
+        #     print("Stop on close")
+
+        # self.fig.canvas.mpl_connect("close_event", handle_close)
+        # plt.show(block=False)
+
+        # while show:
+        #     plt.pause(1)
+        # plt.close(self.fig)
 
 
 def next_rotation(R: TensorType[3,3], omega: TensorType[3], dt) -> TensorType[3,3]:

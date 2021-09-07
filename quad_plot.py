@@ -451,13 +451,14 @@ def main():
 
     # traj.load_progress(filename)
 
-    traj.a_star_init()
+    # traj.a_star_init()
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
     quadplot.show()
 
     traj.learn_init()
+    print("test")
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
