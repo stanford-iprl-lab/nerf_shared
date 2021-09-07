@@ -172,7 +172,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
                 "epochs_init": 2500,
                 "fade_out_epoch": 0,
                 "fade_out_sharpness": 10,
-                "epochs_update": 50,
+                "epochs_update": 250,
                 }
 
         traj = System(renderer, start_state, end_state, cfg)

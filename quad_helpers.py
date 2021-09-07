@@ -43,8 +43,10 @@ class Simulator:
         self.states = states
 
     @typechecked
-    def advance(self, action: TensorType[4]):
-        next_state = self.next_state(self.states[-1, :], action)
+    def advance(self, action: TensorType[4], state_noise: TensorType[18] = None):
+        if state_noise == None:
+            state_noise = 0
+        next_state = self.next_state(self.states[-1, :], action) + state_noise
         self.states = torch.cat( [self.states, next_state[None,:] ], dim=0 )
 
     @typechecked

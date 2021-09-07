@@ -91,7 +91,6 @@ class System:
         # self.robot_body = torch.zeros(1,3)
 
         self.epoch = 0
-        self.opt = None
 
     @typechecked
     def full_to_reduced_state(self, state: TensorType[18]) -> TensorType[4]:
@@ -300,7 +299,6 @@ class System:
 
     def learn_init(self):
         opt = torch.optim.Adam(self.params(), lr=self.lr)
-        self.opt = opt
 
         try:
             for it in range(self.epochs_init):
@@ -320,10 +318,7 @@ class System:
 
     def learn_update(self):
         opt = torch.optim.Adam(self.params(), lr=self.lr)
-        self.opt = opt
 
-        # it = 0
-        # while 1:
         for it in range(self.epochs_update):
             opt.zero_grad()
             self.epoch = it
@@ -416,7 +411,6 @@ class System:
                     "states": self.states,
                     "initial_accel":self.initial_accel,
                     "config_filename": config_filename,
-                    "opt": self.opt.state_dict() if self.opt != None else None,
                     }
         torch.save(to_save, filename)
 
@@ -435,9 +429,6 @@ class System:
         obj = cls(renderer, loaded_dict['start_state'], loaded_dict['end_state'], loaded_dict['cfg'])
         obj.states = loaded_dict['states'].requires_grad_(True)
         obj.initial_accel = loaded_dict['initial_accel'].requires_grad_(True)
-
-        if loaded_dict['opt'] != None:
-            obj
 
         return obj
 
@@ -487,22 +478,20 @@ def main():
             "epochs_init": 2500,
             "fade_out_epoch": 0,
             "fade_out_sharpness": 10,
-            "epochs_update": 50,
+            "epochs_update": 250,
             }
 
-    # filename = "quad_cylinder_train.pt"
-
-    traj = System(renderer, start_state, end_state, cfg)
-    # traj = System.load_progress(filename, renderer)
+    # traj = System(renderer, start_state, end_state, cfg)
+    traj = System.load_progress(filename, renderer)
+    traj.epochs_update = 250 #change depending on noise
 
     # traj.a_star_init()
 
-#     quadplot = QuadPlot()
-#     traj.plot(quadplot)
-#     quadplot.show()
+    # quadplot = QuadPlot()
+    # traj.plot(quadplot)
+    # quadplot.show()
 
-    traj.learn_init()
-    # print("test")
+    # traj.learn_init()
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
@@ -513,30 +502,30 @@ def main():
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())
 
-    if True:
+    if True: # for mpc control
         sim = Simulator(start_state)
         sim.dt = traj.dt #Sim time step changes best on number of steps
 
         for step in range(cfg['steps']):
-            action = traj.get_actions()[step,:].detach()
-            print(action)
-            sim.advance(action)
-
             action = traj.get_next_action().clone().detach()
-            # print(action)
+            print(action)
 
-            sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
+            state_noise = torch.normal(mean= 0, std=torch.tensor( [0.01]*3 + [0.01]*3 + [0]*9 + [0.005]*3 ))
+            # state_noise[3] += 0.0 #crosswind
+
+            # sim.advance(action) # no noise
+            sim.advance(action, state_noise) #add noise
             measured_state = sim.get_current_state().clone().detach()
 
-            #randomness = torch.normal(mean= 0, std=torch.tensor( [0.1]*3 + [0.1]*3 + [0]*9 + [0.1]*3 ))
-            #measured_state += randomness
+            measurement_noise = torch.normal(mean= 0, std=torch.tensor( [0.01]*3 + [0.02]*3 + [0]*9 + [0.005]*3 ))
+            measured_state += measurement_noise
             traj.update_state(measured_state) 
 
             traj.learn_update()
 
             print("sim step", step)
-            # if step % 10 !=0 or step == 0:
-            #     continue
+            if step % 5 !=0 or step == 0:
+                continue
 
             quadplot = QuadPlot()
             traj.plot(quadplot)
@@ -544,19 +533,21 @@ def main():
             quadplot.trajectory( save, "b", show_cloud=False )
             quadplot.show()
 
+    if False:
+        sim = Simulator(start_state)
+        sim.dt = traj.dt #Sim time step changes best on number of steps
 
-        t_states = traj.get_full_states()  
-        print(sim.states.shape[0]) 
-        for i in range(sim.states.shape[0]):
-            print(i)
-            print(t_states[i,:])
-            print(sim.states[i,:])
+        for step in range(cfg['steps']):
+            # for open loop control
+            action = traj.get_actions()[step,:].detach()
+            print(action)
+            sim.advance(action)
 
-        quadplot = QuadPlot()
-        traj.plot(quadplot)
-        quadplot.trajectory( sim, "r" )
-        quadplot.trajectory( save, "b", show_cloud=False )
-        quadplot.show()
+    quadplot = QuadPlot()
+    traj.plot(quadplot)
+    quadplot.trajectory( sim, "r" )
+    quadplot.trajectory( save, "b", show_cloud=False )
+    quadplot.show()
 
 if __name__ == "__main__":
     main()
