@@ -120,10 +120,10 @@ class System:
 
         # self.initial_accel[:2] = actions[1:3, 0] #hot start to to get #update without changing tensor
 
-        # opt_save = self.opt.state_dict()
-        # self.initial_accel = actions[1:3, 0].clone().detach().requires_grad_(True)
-        # self.opt = torch.optim.Adam(self.params(), lr=self.lr)
-        # self.opt.load_state_dict(opt_save)
+        opt_save = self.opt.state_dict()
+        self.initial_accel = actions[1:3, 0].clone().detach().requires_grad_(True)
+        self.opt = torch.optim.Adam(self.params(), lr=self.lr)
+        self.opt.load_state_dict(opt_save)
 
 
     def a_star_init(self):
@@ -416,7 +416,7 @@ class System:
                     "start_state": self.start_state,
                     "end_state": self.end_state,
                     "state_index": self.state_index,
-                    "states": self.states,
+                    "states": self.all_states,
                     "initial_accel":self.initial_accel,
                     "config_filename": config_filename,
                     "opt": self.opt.state_dict(),
@@ -435,9 +435,13 @@ class System:
 
         obj = cls(renderer, checkpoint['start_state'], checkpoint['end_state'], checkpoint['cfg'])
 
+        #object surgery
         obj.all_states = checkpoint['states'].requires_grad_(True)
         obj.initial_accel = checkpoint['initial_accel'].requires_grad_(True)
         obj.state_index = checkpoint['state_index']
+
+        #be sure to recreate the initializer!
+        obj.opt = torch.optim.Adam(obj.params(), lr=obj.lr)
         obj.opt.load_state_dict(checkpoint['opt'])
 
         return obj
@@ -495,6 +499,7 @@ def main():
 
     # traj = System(renderer, start_state, end_state, cfg)
     traj = System.load_progress(filename, renderer)
+    traj.epochs_update = 50
 
     # traj.a_star_init()
 
@@ -527,11 +532,11 @@ def main():
 
             state_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
             sim.advance(action)
-            # sim.advance(action, state_noise)
+            sim.advance(action, state_noise)
             measured_state = sim.get_current_state().clone().detach()
 
             measurement_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
-            measured_state += measurement_noise
+            # measured_state += measurement_noise
             traj.update_state(measured_state) 
 
             traj.learn_update()
@@ -540,7 +545,7 @@ def main():
                 break
 
             print("sim step", step)
-            if step % 10 !=0 or step == 0:
+            if step % 5 !=0 or step == 0:
                 continue
 
 
