@@ -486,17 +486,16 @@ def main():
 
     # filename = "quad_cylinder_train.pt"
 
-    traj = System(renderer, start_state, end_state, cfg)
-    # traj = System.load_progress(filename, renderer)
+    # traj = System(renderer, start_state, end_state, cfg)
+    traj = System.load_progress(filename, renderer)
 
     # traj.a_star_init()
 
-#     quadplot = QuadPlot()
-#     traj.plot(quadplot)
-#     quadplot.show()
+    quadplot = QuadPlot()
+    traj.plot(quadplot)
+    quadplot.show()
 
-    traj.learn_init()
-    # print("test")
+    # traj.learn_init()
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
@@ -512,31 +511,33 @@ def main():
         sim.dt = traj.dt #Sim time step changes best on number of steps
 
         for step in range(cfg['steps']):
-            action = traj.get_actions()[step,:].detach()
-            print(action)
-            sim.advance(action)
-
-            # action = traj.get_next_action().clone().detach()
+            # action = traj.get_actions()[step,:].detach()
             # print(action)
+            # sim.advance(action)
 
-            # sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
-            # measured_state = sim.get_current_state().clone().detach()
+            action = traj.get_next_action().clone().detach()
+            print(action)
 
-            # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
-            # measured_state += randomness
-            # traj.update_state(measured_state) 
+            state_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.0]*3 ))
+            # sim.advance(action)
+            sim.advance(action, state_noise)
+            measured_state = sim.get_current_state().clone().detach()
 
-            # traj.learn_update()
+            measurement_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.0]*3 ))
+            # measured_state += measurement_noise
+            traj.update_state(measured_state) 
 
-            # print("sim step", step)
-            # if step % 10 !=0 or step == 0:
-            #     continue
+            traj.learn_update()
 
-            # quadplot = QuadPlot()
-            # traj.plot(quadplot)
-            # quadplot.trajectory( sim, "r" )
-            # quadplot.trajectory( save, "b", show_cloud=False )
-            # quadplot.show()
+            print("sim step", step)
+            if step % 5 !=0 or step == 0:
+                continue
+
+            quadplot = QuadPlot()
+            traj.plot(quadplot)
+            quadplot.trajectory( sim, "r" )
+            quadplot.trajectory( save, "b", show_cloud=False )
+            quadplot.show()
 
 
         t_states = traj.get_full_states()   
