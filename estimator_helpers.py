@@ -10,8 +10,8 @@ import time
 import numpy.linalg as la
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-torch.manual_seed(0)
-np.random.seed(0)
+torch.manual_seed(1)
+np.random.seed(1)
 
 #Helper Functions
 def find_POI(img_rgb, DEBUG=False): # img - RGB image in range 0...255
@@ -377,7 +377,7 @@ class Estimator():
                             
             k += 1
             if k % self.iter == 0:
-                if best_loss <= 2.:
+                if best_loss <= 2.5 or k == 2*self.iter:
                     return best_state.clone().detach()
                 else:
                     if self.sampling_strategy == 'interest_regions' or self.sampling_strategy == 'interest_points':
