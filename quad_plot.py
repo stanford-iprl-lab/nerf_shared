@@ -22,6 +22,7 @@ np.random.seed(0)
 
 from quad_helpers import Simulator, QuadPlot
 from quad_helpers import rot_matrix_to_vec, vec_to_rot_matrix, next_rotation
+from quad_helpers import astar
 
 # # hard coded "nerf" for testing. see below to import real nerf
 def get_manual_nerf(name):
@@ -95,6 +96,54 @@ class System:
 
         return torch.cat( [pos, torch.tensor([angle]) ], dim = -1).detach()
 
+    def a_star_init(self):
+        #TODO WARNING
+        side = 100
+        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
+
+        # side, side, side, 3
+        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+            
+        output = self.nerf(coods)
+        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
+        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
+        # 20, 20, 20
+
+        print(occupied.shape)
+        grid_size = side//5
+
+        start_grid_float = grid_size*(self.start_states[1, :3] + 1)/2
+        end_grid_float   = grid_size*(self.end_states  [1, :3] + 1)/2
+
+        print(start_grid_float)
+        print(end_grid_float)
+        
+        start = tuple(int(start_grid_float[i]) for i in range(3) )
+        end =   tuple(int(end_grid_float[i]  ) for i in range(3) )
+        print(start, end)
+
+        path = astar(occupied, start, end)
+
+        squares =  2* (torch.tensor( path, dtype=torch.float)/grid_size) -1
+        print(squares.shape)
+
+        #yaw
+        states = torch.cat( [squares, torch.zeros( (squares.shape[0], 1) ) ], dim=-1)
+
+        randomness = torch.normal(mean= 0, std=0.001*torch.ones(states.shape) )
+        states += randomness
+
+        # 1 2 3 4 5 6 7
+        # 1 1 2 3 4 5 6
+        # 2 3 4 5 6 7 7
+
+        prev_smooth = torch.cat([states[0,None, :], states[:-1,:]], dim=0)
+        next_smooth = torch.cat([states[1:,:], states[-1,None, :], ], dim=0)
+
+        states = (prev_smooth + next_smooth + states)/3
+
+        self.states = states.clone().detach().requires_grad_(True)
+        #unfinished
 
     def params(self):
         return [self.initial_accel, self.states]
@@ -362,7 +411,10 @@ class System:
                 f.write('\n')
 
     def save_progress(self, filename):
-        os.remove(filename)
+        try:
+            os.remove(filename)
+        except:
+            pass
         torch.save(self.states, filename)
 
     def load_progress(self, filename):
@@ -370,8 +422,18 @@ class System:
 
 def main():
 
-    # renderer = get_nerf('configs/stonehenge.txt')
-    # stonehenge - simple
+    # violin - astar
+    # renderer = get_nerf('configs/violin.txt')
+    # start_state = torch.tensor([0.44, -0.23, 0.2, 0])
+    # end_state = torch.tensor([-0.58, 0.66, 0.15, 0])
+
+
+    #stonehenge
+    renderer = get_nerf('configs/stonehenge.txt')
+    # start_state = torch.tensor([-0.06, -0.79, 0.2, 0])
+    # end_state = torch.tensor([-0.46, 0.55, 0.16, 0])
+
+
     start_pos = torch.tensor([-0.05,-0.9, 0.2])
     end_pos   = torch.tensor([-1 , 0.7, 0.35])
     # start_pos = torch.tensor([-1, 0, 0.2])
@@ -389,24 +451,25 @@ def main():
             "steps": 20,
             "lr": 0.01,
             "epochs_init": 2500,
-            "fade_out_epoch": 500,
+            "fade_out_epoch": 0,
             "fade_out_sharpness": 10,
             "epochs_update": 200,
             }
 
-    traj = System(renderer, start_state, end_state, cfg)
-    traj.learn_init()
     # filename = "quad_cylinder_train.pt"
     filename = "quad_train.pt"
+
+    traj = System(renderer, start_state, end_state, cfg)
+
     # traj.load_progress(filename)
 
+    traj.a_star_init()
 
-    sim = Simulator(start_state)
-    sim.dt = traj.dt
-    print("dt", sim.dt)
+    quadplot = QuadPlot()
+    traj.plot(quadplot)
+    quadplot.show()
 
-    save = Simulator(start_state)
-    save.copy_states(traj.get_full_states())
+    traj.learn_init()
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
@@ -414,7 +477,13 @@ def main():
 
     # traj.save_progress(filename)
 
-    if True:
+    save = Simulator(start_state)
+    save.copy_states(traj.get_full_states())
+
+    if False:
+        sim = Simulator(start_state)
+        sim.dt = traj.dt #Sim time step changes best on number of steps
+
         for step in range(cfg['steps']):
             action = traj.get_actions()[step,:].detach()
             print(action)
@@ -461,13 +530,6 @@ def main():
         quadplot.trajectory( save, "b", show_cloud=False )
         quadplot.show()
 
-
-
-
-
-    #PARAM file to save the trajectory
-    # traj.save_poses("paths/playground_testing.json")
-    # traj.plot()
 
 
 if __name__ == "__main__":

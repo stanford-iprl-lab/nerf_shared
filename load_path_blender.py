@@ -67,4 +67,4 @@ def get_endpoints():
     s += "\n"
     s += 'end_state = torch.tensor(' + str( e_loc + [0] ) +")"
     s += "\n"
-    return s
+    print(s)
