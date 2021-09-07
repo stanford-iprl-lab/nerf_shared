@@ -117,7 +117,13 @@ class System:
 
         self.start_state = measured_state
         self.state_index +=1 #update without upsetting tensor
-        self.initial_accel[:2] = actions[1:3, 0] #hot start to to get #update without changing tensor
+
+        # self.initial_accel[:2] = actions[1:3, 0] #hot start to to get #update without changing tensor
+
+        # opt_save = self.opt.state_dict()
+        # self.initial_accel = actions[1:3, 0].clone().detach().requires_grad_(True)
+        # self.opt = torch.optim.Adam(self.params(), lr=self.lr)
+        # self.opt.load_state_dict(opt_save)
 
 
     def a_star_init(self):
@@ -498,9 +504,9 @@ def main():
 
     # traj.learn_init()
 
-    quadplot = QuadPlot()
-    traj.plot(quadplot)
-    quadplot.show()
+    # quadplot = QuadPlot()
+    # traj.plot(quadplot)
+    # quadplot.show()
 
     # traj.save_progress(filename)
 
@@ -519,18 +525,24 @@ def main():
             action = traj.get_next_action().clone().detach()
             print(action)
 
-            sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
+            state_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
+            sim.advance(action)
+            # sim.advance(action, state_noise)
             measured_state = sim.get_current_state().clone().detach()
 
-            randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
-            measured_state += randomness
+            measurement_noise = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
+            measured_state += measurement_noise
             traj.update_state(measured_state) 
 
             traj.learn_update()
 
+            if (cfg['steps'] - step) <= 5:
+                break
+
             print("sim step", step)
             if step % 10 !=0 or step == 0:
                 continue
+
 
             quadplot = QuadPlot()
             traj.plot(quadplot)
@@ -538,12 +550,6 @@ def main():
             quadplot.trajectory( save, "b", show_cloud=False )
             quadplot.show()
 
-
-        t_states = traj.get_full_states()   
-        for i in range(sim.states.shape[0]):
-            print(i)
-            print(t_states[i,:])
-            print(sim.states[i,:])
 
         quadplot = QuadPlot()
         traj.plot(quadplot)
