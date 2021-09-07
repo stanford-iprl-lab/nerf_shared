@@ -77,8 +77,11 @@ class System:
         states = (1-slider) * self.full_to_reduced_state(start_state) + \
                     slider  * self.full_to_reduced_state(end_state)
 
-        self.states = states.clone().detach().requires_grad_(True)
+        #decision variables (including past states - as we update new state state_index advances)
+        #see states and initial_accel @property definitions
+        self.all_states = states.clone().detach().requires_grad_(True)
         self.initial_accel = torch.tensor([10.0,10.0]).requires_grad_(True)
+        self.state_index = 0
 
         #PARAM this sets the shape of the robot body point cloud
         body = torch.stack( torch.meshgrid( torch.linspace(-0.05, 0.05, 10),
@@ -88,7 +91,15 @@ class System:
         # self.robot_body = torch.zeros(1,3)
 
         self.epoch = 0
-        self.opt = None
+        self.opt = torch.optim.Adam(self.params(), lr=self.lr)
+
+    @property
+    def states(self):
+        return self.all_states[self.state_index:,:]
+
+    # @property
+    # def initial_accel(self):
+    #     return self.states[:self.state_index,:]
 
     @typechecked
     def full_to_reduced_state(self, state: TensorType[18]) -> TensorType[4]:
@@ -99,6 +110,15 @@ class System:
         angle = torch.atan2(y, x)
 
         return torch.cat( [pos, torch.tensor([angle]) ], dim = -1).detach()
+
+    @typechecked
+    def update_state(self, measured_state: TensorType[18]):
+        pos, vel, accel, rot_matrix, omega, angular_accel, actions = self.calc_everything()
+
+        self.start_state = measured_state
+        self.state_index +=1 #update without upsetting tensor
+        self.initial_accel[:2] = actions[1:3, 0] #hot start to to get #update without changing tensor
+
 
     def a_star_init(self):
         side = 100 #PARAM grid size
@@ -147,7 +167,7 @@ class System:
         self.states = states.clone().detach().requires_grad_(True)
 
     def params(self):
-        return [self.initial_accel, self.states]
+        return [self.initial_accel, self.all_states]
 
     @typechecked
     def calc_everything(self) -> (
@@ -210,7 +230,6 @@ class System:
         z_axis_body = z_axis_body[2:-1, :]
 
         z_angle = self.states[:,3]
-
         in_plane_heading = torch.stack( [torch.sin(z_angle), -torch.cos(z_angle), torch.zeros_like(z_angle)], dim=-1)
 
         x_axis_body = torch.cross(z_axis_body, in_plane_heading, dim=-1)
@@ -296,17 +315,14 @@ class System:
         return torch.mean(total_cost)
 
     def learn_init(self):
-        opt = torch.optim.Adam(self.params(), lr=self.lr)
-        self.opt = opt
-
         try:
             for it in range(self.epochs_init):
-                opt.zero_grad()
+                self.opt.zero_grad()
                 self.epoch = it
                 loss = self.total_cost()
                 print(it, loss)
                 loss.backward()
-                opt.step()
+                self.opt.step()
 
                 save_step = 50
                 if it%save_step == 0:
@@ -316,18 +332,13 @@ class System:
             print("finishing early")
 
     def learn_update(self):
-        opt = torch.optim.Adam(self.params(), lr=self.lr)
-        self.opt = opt
-
-        # it = 0
-        # while 1:
         for it in range(self.epochs_update):
-            opt.zero_grad()
+            self.opt.zero_grad()
             self.epoch = it
             loss = self.total_cost()
             print(it, loss)
             loss.backward()
-            opt.step()
+            self.opt.step()
             # it += 1
 
             # if (it > self.epochs_update and self.max_residual < 1e-3):
@@ -336,16 +347,6 @@ class System:
             # save_step = 50
             # if it%save_step == 0:
         # self.save_poses("paths/"+str(it//save_step)+"_testing.json")
-
-    @typechecked
-    def update_state(self, measured_state: TensorType[18]):
-        pos, vel, accel, rot_matrix, omega, angular_accel, actions = self.calc_everything()
-
-        self.start_state = measured_state
-        self.states = self.states[1:, :].detach().requires_grad_(True)
-        self.initial_accel = actions[1:3, 0].detach().requires_grad_(True)
-        # print(self.initial_accel.shape)
-
 
     def plot(self, quadplot):
         quadplot.trajectory( self, "g" )
@@ -395,6 +396,7 @@ class System:
 
     def save_progress(self, filename):
         try:
+            print("overwriting previous save file")
             os.remove(filename)
         except FileNotFoundError:
             pass
@@ -407,31 +409,30 @@ class System:
         to_save = {"cfg": self.cfg,
                     "start_state": self.start_state,
                     "end_state": self.end_state,
+                    "state_index": self.state_index,
                     "states": self.states,
                     "initial_accel":self.initial_accel,
                     "config_filename": config_filename,
-                    "opt": self.opt.state_dict() if self.opt != None else None,
+                    "opt": self.opt.state_dict(),
                     }
         torch.save(to_save, filename)
 
     @classmethod
     def load_progress(cls, filename, renderer=None):
-        # a note about loading: it won't load the optimiser learned step sizes
-        # so the first couple gradient steps can be quite bad
 
-        loaded_dict = torch.load(filename)
-        print(loaded_dict)
+        checkpoint = torch.load(filename)
+        print(checkpoint)
 
         if renderer == None:
-            assert loaded_dict['config_filename'] is not None
-            renderer = load_nerf(loaded_dict['config_filename'])
+            assert checkpoint['config_filename'] is not None
+            renderer = load_nerf(checkpoint['config_filename'])
 
-        obj = cls(renderer, loaded_dict['start_state'], loaded_dict['end_state'], loaded_dict['cfg'])
-        obj.states = loaded_dict['states'].requires_grad_(True)
-        obj.initial_accel = loaded_dict['initial_accel'].requires_grad_(True)
+        obj = cls(renderer, checkpoint['start_state'], checkpoint['end_state'], checkpoint['cfg'])
 
-        if loaded_dict['opt'] != None:
-            obj
+        obj.all_states = checkpoint['states'].requires_grad_(True)
+        obj.initial_accel = checkpoint['initial_accel'].requires_grad_(True)
+        obj.state_index = checkpoint['state_index']
+        obj.opt.load_state_dict(checkpoint['opt'])
 
         return obj
 
@@ -486,8 +487,8 @@ def main():
 
     # filename = "quad_cylinder_train.pt"
 
-    traj = System(renderer, start_state, end_state, cfg)
-    # traj = System.load_progress(filename, renderer)
+    # traj = System(renderer, start_state, end_state, cfg)
+    traj = System.load_progress(filename, renderer)
 
     # traj.a_star_init()
 
@@ -495,8 +496,7 @@ def main():
 #     traj.plot(quadplot)
 #     quadplot.show()
 
-    traj.learn_init()
-    # print("test")
+    # traj.learn_init()
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
@@ -512,31 +512,31 @@ def main():
         sim.dt = traj.dt #Sim time step changes best on number of steps
 
         for step in range(cfg['steps']):
-            action = traj.get_actions()[step,:].detach()
-            print(action)
-            sim.advance(action)
-
-            # action = traj.get_next_action().clone().detach()
+            # action = traj.get_actions()[step,:].detach()
             # print(action)
+            # sim.advance(action)
 
-            # sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
-            # measured_state = sim.get_current_state().clone().detach()
+            action = traj.get_next_action().clone().detach()
+            print(action)
 
-            # randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
-            # measured_state += randomness
-            # traj.update_state(measured_state) 
+            sim.advance(action) #+ torch.normal(mean= 0, std=torch.tensor( [0.5, 1, 1,1] ) ))
+            measured_state = sim.get_current_state().clone().detach()
 
-            # traj.learn_update()
+            randomness = torch.normal(mean= 0, std=torch.tensor( [0.02]*3 + [0.02]*3 + [0]*9 + [0.02]*3 ))
+            measured_state += randomness
+            traj.update_state(measured_state) 
 
-            # print("sim step", step)
-            # if step % 10 !=0 or step == 0:
-            #     continue
+            traj.learn_update()
 
-            # quadplot = QuadPlot()
-            # traj.plot(quadplot)
-            # quadplot.trajectory( sim, "r" )
-            # quadplot.trajectory( save, "b", show_cloud=False )
-            # quadplot.show()
+            print("sim step", step)
+            if step % 10 !=0 or step == 0:
+                continue
+
+            quadplot = QuadPlot()
+            traj.plot(quadplot)
+            quadplot.trajectory( sim, "r" )
+            quadplot.trajectory( save, "b", show_cloud=False )
+            quadplot.show()
 
 
         t_states = traj.get_full_states()   
