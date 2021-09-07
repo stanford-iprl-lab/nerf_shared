@@ -138,26 +138,13 @@ def get_nerf(config = 'configs/playground.txt'):
     chunk = args.chunk
     hwf = None, None, None
     K = None
-    renderer = Renderer(hwf, K, chunk, render_kwargs_train)
+    renderer = Renderer(hwf, K, chunk, render_kwargs_train, config)
 
     return renderer
 
-def main():
-    # nerf = get_nerf('configs/playground.txt')
-    # nerf = get_nerf("configs/violin.txt")
-    nerf = get_nerf("configs/stonehenge.txt")
-    # nerf = get_nerf("configs/church.txt")
 
-    side = 100
-    linspace = torch.linspace(-1,1, side)
-
-    # side, side, side, 3
-    coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
-                
-    output = nerf.get_density(coods)
-
-
-    maxpool = torch.nn.MaxPool3d(kernel_size = 5)
+def show_voxels(output, kernel_size = 5):
+    maxpool = torch.nn.MaxPool3d(kernel_size = kernel_size)
 
     print(output.shape)
     output = maxpool(output[None,None,...])[0,0,...]
@@ -167,22 +154,54 @@ def main():
     ax.voxels(output > 0.33,  edgecolor='k') #0.33 for violin
     plt.show()
 
-    # into_page_dim, x_dim, y_dim  = 0,  1, 2
-    # into_page_dim, x_dim, y_dim  = 1,  0, 2
-    into_page_dim, x_dim, y_dim  = 2,  0, 1
+def show_projection(coods, output, dim="y", show_coords=True, max_project = False):
 
-    # im,_ = torch.max( output, dim=into_page_dim)
-    im = torch.mean( output, dim=into_page_dim)
+    if dim == "x":
+        into_page_dim, x_dim, y_dim  = 0,  1, 2
+    elif dim == "y":
+        into_page_dim, x_dim, y_dim  = 1,  0, 2
+    elif dim == "z":
+        into_page_dim, x_dim, y_dim  = 2,  0, 1
+    else:
+        raise ValueError
+
+    if max_project:
+        im,_ = torch.max( output, dim=into_page_dim)
+    else:
+        im = torch.mean( output, dim=into_page_dim)
+
     x_image = torch.mean( coods, dim=into_page_dim)[...,x_dim]
     y_image = torch.mean( coods, dim=into_page_dim)[...,y_dim]
 
-    print(im.shape)
-    print("happy")
-    # exit()
-
-    # plt.pcolormesh(x_image, y_image, im)
-    plt.imshow(im)
+    if show_coords:
+        plt.pcolormesh(x_image, y_image, im)
+    else:
+        plt.imshow(im)
     plt.show()
+
+def main():
+    # nerf = get_nerf('configs/playground.txt')
+    # nerf = get_nerf("configs/violin.txt")
+    # nerf = get_nerf("configs/stonehenge.txt")
+    nerf = get_nerf("configs/church.txt")
+
+    side = 100
+    linspace = torch.linspace(-1,1, side)
+
+    x_linspace = torch.linspace(-2,-1, side)
+    y_linspace = torch.linspace(-1,0, side)
+    z_linspace = torch.linspace(0,1, side)
+
+    coods = torch.stack( torch.meshgrid( x_linspace, y_linspace, z_linspace ), dim=-1)
+
+    # side, side, side, 3
+    # coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+    output = nerf.get_density(coods)
+
+    # show_voxels(output)
+
+    show_projection(coods, output, dim="z", show_coords=True, max_project = False)
+
 
 
 

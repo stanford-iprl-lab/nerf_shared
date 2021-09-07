@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 
 import json
+import heapq 
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -19,6 +20,7 @@ from load_nerf import get_nerf
 torch.manual_seed(0)
 np.random.seed(0)
 
+import time
 
 class Simulator:
 
@@ -99,18 +101,7 @@ class Simulator:
         domega = self.invI @ (tau - torch.cross(omega, self.I @ omega))
 
         # Propagate rotation matrix using exponential map of the angle displacements
-        angle = omega*dt
-        theta = torch.norm(angle, p=2)
-        if theta == 0:
-            exp_i = torch.eye(3)
-        else:
-            exp_i = torch.eye(3)
-            angle_norm = angle /theta
-            K = skew_matrix(angle_norm)
-
-            exp_i = torch.eye(3) + torch.sin(theta) * K + (1 - torch.cos(theta)) * torch.matmul(K, K)
-
-        next_R = R @ exp_i
+        next_R = next_rotation(R, omega, dt)
 
         next_state[0:3] = pos + v * dt
         next_state[3:6] = v + dv * dt
@@ -197,7 +188,22 @@ class QuadPlot:
         self.ax_graph.plot(*arg, **kawrgs)
 
     def show(self):
+        # sadly this messed with using ctrl-c after running
         plt.show()
+        # plt.ion()
+        # show = True
+
+        # def handle_close(event):
+        #     nonlocal show
+        #     show = False
+        #     print("Stop on close")
+
+        # self.fig.canvas.mpl_connect("close_event", handle_close)
+        # plt.show(block=False)
+
+        # while show:
+        #     plt.pause(1)
+        # plt.close(self.fig)
 
 
 def next_rotation(R: TensorType[3,3], omega: TensorType[3], dt) -> TensorType[3,3]:
@@ -233,6 +239,9 @@ def astar(occupied, start, goal):
     came_from = {}
     gscore = {start: 0}
 
+    assert not occupied[start]
+    assert not occupied[goal]
+
     open_heap = []
     heapq.heappush(open_heap, (heuristic(start, goal), start))
 
@@ -246,7 +255,7 @@ def astar(occupied, start, goal):
                 current = came_from[current]
             assert current == start
             data.append(current)
-            return reversed(data)
+            return list(reversed(data))
 
         close_set.add(current)
 
@@ -273,45 +282,6 @@ def astar(occupied, start, goal):
 
 
 
-    def a_star_init(self):
-        #TODO WARNING
-        side = 100
-        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
-
-        # side, side, side, 3
-        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
-            
-        output = self.nerf(coods)
-        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
-        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
-        # 20, 20, 20
-
-        self.start_states[1, :3]
-        self.end_states[-2, :3]
-
-        path = astar(occupied, start, end)
-        #unfinished
-
-
-
-    def a_star_init(self):
-        #TODO WARNING
-        side = 100
-        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
-
-        # side, side, side, 3
-        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
-            
-        output = self.nerf(coods)
-        maxpool = torch.nn.MaxPool3d(kernel_size = 5)
-        occupied = maxpool(output[None,None,...])[0,0,...] > 0.33
-        # 20, 20, 20
-
-        self.start_states[1, :3]
-        self.end_states[-2, :3]
-
-        path = astar(occupied, start, end)
-        #unfinished
 
 
 def settings():
@@ -385,7 +355,7 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
 
     trace = torch.diagonal(R, dim1=-2, dim2=-1).sum(-1)
 
-    def acos_safe(x, eps=1e-4):
+    def acos_safe(x, eps=1e-7):
         """https://github.com/pytorch/pytorch/issues/8069"""
         slope = np.arccos(1-eps) / eps
         # TODO: stop doing this allocation once sparse gradients with NaNs (like in
@@ -398,12 +368,13 @@ def rot_matrix_to_vec( R: TensorType["batch":..., 3, 3]) -> TensorType["batch":.
         buf[bad] = torch.acos(sign * (1 - eps)) - slope*sign*(abs(x[bad]) - 1 + eps)
         return buf
 
+    # angle = torch.acos((trace - 1) / 2)[..., None]
     angle = acos_safe((trace - 1) / 2)[..., None]
     # print(trace, angle)
 
     vec = (
         1
-        / (2 * torch.sin(angle+ 1e-5))
+        / (2 * torch.sin(angle + 1e-10))
         * torch.stack(
             [
                 R[..., 2, 1] - R[..., 1, 2],
@@ -427,7 +398,8 @@ def vec_to_rot_matrix(rot_vec: TensorType["batch":..., 3]) -> TensorType["batch"
     assert not torch.any(torch.isnan(rot_vec))
 
     angle = torch.norm(rot_vec, dim=-1, keepdim=True)
-    axis = rot_vec / (1e-5 + angle)
+
+    axis = rot_vec / (1e-10 + angle)
     S = skew_matrix(axis)
     # print(S.shape)
     # print(angle.shape)
