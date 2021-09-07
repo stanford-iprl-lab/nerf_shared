@@ -88,7 +88,6 @@ class System:
         # self.robot_body = torch.zeros(1,3)
 
         self.epoch = 0
-        self.opt = None
 
     @typechecked
     def full_to_reduced_state(self, state: TensorType[18]) -> TensorType[4]:
@@ -297,7 +296,6 @@ class System:
 
     def learn_init(self):
         opt = torch.optim.Adam(self.params(), lr=self.lr)
-        self.opt = opt
 
         try:
             for it in range(self.epochs_init):
@@ -317,10 +315,7 @@ class System:
 
     def learn_update(self):
         opt = torch.optim.Adam(self.params(), lr=self.lr)
-        self.opt = opt
 
-        # it = 0
-        # while 1:
         for it in range(self.epochs_update):
             opt.zero_grad()
             self.epoch = it
@@ -410,7 +405,6 @@ class System:
                     "states": self.states,
                     "initial_accel":self.initial_accel,
                     "config_filename": config_filename,
-                    "opt": self.opt.state_dict() if self.opt != None else None,
                     }
         torch.save(to_save, filename)
 
@@ -429,9 +423,6 @@ class System:
         obj = cls(renderer, loaded_dict['start_state'], loaded_dict['end_state'], loaded_dict['cfg'])
         obj.states = loaded_dict['states'].requires_grad_(True)
         obj.initial_accel = loaded_dict['initial_accel'].requires_grad_(True)
-
-        if loaded_dict['opt'] != None:
-            obj
 
         return obj
 
