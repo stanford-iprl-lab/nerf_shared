@@ -415,15 +415,14 @@ class System:
                     "config_filename": config_filename,
                     }
         torch.save(to_save, filename)
-        # with open(filename,"w+") as f:
-        #     pickle.dump(self, f)
 
     @classmethod
     def load_progress(cls, filename, renderer=None):
-        # with open(filename,"r") as f:
-        #     return pickle.load(f)
+        # a note about loading: it won't load the optimiser learned step sizes
+        # so the first couple gradient steps can be quite bad
 
         loaded_dict = torch.load(filename)
+        print(loaded_dict)
 
         if renderer == None:
             assert loaded_dict['config_filename'] is not None
@@ -471,8 +470,8 @@ def main():
     start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
-    filename = "line.plan"
-    renderer = get_manual_nerf("empty")
+    # filename = "line.plan"
+    # renderer = get_manual_nerf("empty")
     # renderer = get_manual_nerf("cylinder")
 
     cfg = {"T_final": 2,
@@ -486,11 +485,11 @@ def main():
 
     # filename = "quad_cylinder_train.pt"
 
-    # traj = System(renderer, start_state, end_state, cfg)
+    traj = System(renderer, start_state, end_state, cfg)
 
-    traj = System.load_progress(filename, renderer)
+    # traj = System.load_progress(filename, renderer)
 
-    # traj.a_star_init()
+    traj.a_star_init()
 
 #     quadplot = QuadPlot()
 #     traj.plot(quadplot)
@@ -503,8 +502,8 @@ def main():
     traj.plot(quadplot)
     quadplot.show()
 
-    traj.save_progress(filename)
-    print("saved to", filename)
+    # traj.save_progress(filename)
+    # print("saved to", filename)
 
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())
