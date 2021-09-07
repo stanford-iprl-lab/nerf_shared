@@ -154,15 +154,16 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
 
         # renderer = get_nerf('configs/stonehenge.txt')
         # stonehenge - simple
-        start_pos = torch.tensor([-0.05,-0.9, -0.2])
-        end_pos   = torch.tensor([-0.05,0.9, 0.1])
+        start_pos = torch.tensor([-0.05,-0.9, -0.1])
+        end_pos   = torch.tensor([-0.5,0.9, 1.])
         # start_pos = torch.tensor([-1, 0, 0.2])
         # end_pos   = torch.tensor([ 1, 0, 0.5])
 
         start_R = vec_to_rot_matrix( torch.tensor([0.2,0.3,0]))
+        end_R = vec_to_rot_matrix(-torch.tensor([0.2,0.3,0]))
 
         start_state = torch.cat( [start_pos, torch.tensor([0,1,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
-        end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
+        end_state   = torch.cat( [end_pos,   torch.zeros(3), end_R.reshape(-1), torch.zeros(3)], dim=0 )
 
 
         cfg = {"T_final": 2,
@@ -193,7 +194,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         if nerf_filter == True:
             sig = .1 * torch.eye(start_state.shape[0])
 
-            Q = 1e-3 * torch.eye(start_state.shape[0])
+            Q = 1e-2 * torch.eye(start_state.shape[0])
 
             estimator = Estimator(N_iter, 512, 'interest_regions', renderer, agent, start_state, sig, Q, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.0, amount=0., delta_brightness=0.)
         else:
@@ -205,7 +206,8 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
 
         measured_states = []
         
-        noise = np.random.normal(0., 1e-3, size=12)
+        noise = np.random.normal(0., [1e-2, 1e-2, 1e-2, 0., 0., 0., 1e-1, 1e-1, 1e-1, 0., 0., 0.])
+
         state_estimate = start_state
 
         for iter in trange(cfg['steps']):

@@ -31,7 +31,7 @@ def make_simple_cfg(settings):
     rgb_sensor_spec.position = [0.0, settings["sensor_height"], 0.0]
     rgb_sensor_spec.orientation = [0.0, 0., 0.0]
     rgb_sensor_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
-    rgb_sensor_spec.hfov = 40
+    #rgb_sensor_spec.hfov = 40
     sensor_specs.append(rgb_sensor_spec)
 
     print('Sensor Height', [0.0, settings["sensor_height"], 0.0])
@@ -43,7 +43,7 @@ def make_simple_cfg(settings):
     depth_camera_1stperson_spec.position = [0.0, settings["sensor_height"], 0.0]
     depth_camera_1stperson_spec.orientation = [0.0, 0., 0.0]
     depth_camera_1stperson_spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
-    depth_camera_1stperson_spec.hfov = 40
+    #depth_camera_1stperson_spec.hfov = 40
     sensor_specs.append(depth_camera_1stperson_spec)
 
     agent_cfg.sensor_specifications = sensor_specs
@@ -136,8 +136,8 @@ class Simulation():
 
         depth = self.sim.get_sensor_observations()['depth_camera']
 
-        #gray = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
-        #mask = cv2.compare(gray,5,cv2.CMP_LT)
-        #obs[mask > 0] = 255
+        gray = cv2.cvtColor(obs, cv2.COLOR_BGR2GRAY)
+        mask = cv2.compare(gray,5,cv2.CMP_LT)
+        obs[mask > 0] = 255
 
         return np.array(obs)
