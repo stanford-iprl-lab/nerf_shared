@@ -6,24 +6,14 @@ from mathutils import Matrix
 
 import os.path
 
-#filepath = bpy.path.abspath('//..') + "/playground_testing.json"
-
-
 object_to_copy = bpy.data.objects["tim_drone"]
-
-
 
 def load_MPC(experiment_name):
     pass
 
 def load_training(experiment_name):
-    # path_parent = object_to_copy.copy()
-    # path_parent.name = "PATH"
-
-    collection = bpy.data.collections.new(experiment_name)
+    collection = bpy.data.collections.new(experiment_name +"_train")
     bpy.context.scene.collection.children.link(collection)
-
-    # collection.objects.link(path_parent)
 
     save = 0
     while True:
@@ -43,8 +33,6 @@ def load_training(experiment_name):
                     collection.objects.link(new_object)
 
                     new_object.name = name 
-                    # new_object.parent = path_parent
-                    # new_object.matrix_parent_inverse = path_parent.matrix_world.inverted()
                 else:
                     new_object = bpy.data.objects[name]
 
