@@ -268,24 +268,24 @@ class System:
         fz = actions[:, 0]
         torques = torch.norm(actions[:, 1:], dim=-1)
 
-        # multiplied by distance to prevent it from just speed tunnelling
+        # S, B, 3  =  S, _, 3 +      _, B, 3   X    S, _,  3
+        B_body, B_omega = torch.broadcast_tensors(self.robot_body, omega[:,None,:])
+        point_vels = vel[:,None,:] + torch.cross(B_body, B_omega, dim=-1)
+
+        # S, B
         distance = torch.sum( vel**2 + 1e-5, dim = -1)**0.5
+        # S, B
         density = self.nerf( self.body_to_world(self.robot_body) )**2
-        colision_prob = torch.mean( density, dim = -1) * distance
+
+        # multiplied by distance to prevent it from just speed tunnelling
+        # S =   S,B * S,_
+        colision_prob = torch.mean(density * distance[:,None], dim = -1) 
 
         if self.epoch < self.fade_out_epoch:
             t = torch.linspace(0,1, colision_prob.shape[0])
             position = self.epoch/self.fade_out_epoch
             mask = torch.sigmoid(self.fade_out_sharpness * (position - t))
             colision_prob = colision_prob * mask
-
-        ##dynamics residual loss - make sure acceleration point in body frame z axis
-        ## S, 3, _     =   S, 3, 3  @ S, 3, _
-        #body_frame_accel   = ( rot_matrix.swapdims(-1,-2) @ accel[:,:,None]) [:,:,0]
-        ## pick out the ones we want to constrain (the rest are already constrained
-        #residue_angle = torch.atan2( torch.norm(body_frame_accel[:,:2], dim =-1 ) , body_frame_accel[:,2])
-        #print("residue_angle", residue_angle)
-
 
         #PARAM cost function shaping
         return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6
