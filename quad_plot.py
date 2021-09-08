@@ -5,8 +5,8 @@ import torch.nn.functional as F
 import numpy as np
 
 import json
-import os
-import pickle
+import shutil
+import pathlib
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -308,7 +308,12 @@ class System:
 
                 save_step = 50
                 if it%save_step == 0:
-                    self.save_poses("paths/"+str(it//save_step)+"_testing.json")
+                    if hasattr(self, "basefolder"):
+                        self.save_poses(self.basefolder / "train_poses" / (str(it//save_step)+".json"))
+                        self.save_graph(self.basefolder / "train_graph" / (str(it//save_step)+".json"))
+                    else:
+                        print("WANRING: data not saved!")
+
 
         except KeyboardInterrupt:
             print("finishing early")
@@ -388,12 +393,19 @@ class System:
                 json.dump(pose.tolist(), f)
                 f.write('\n')
 
-    def save_progress(self, filename):
-        try:
-            os.remove(filename)
-        except FileNotFoundError:
-            pass
+    def save_graph(self, filename):
+        positions, vel, _, rot_matrix, omega, _, actions = self.calc_everything()
+        total_cost, colision_loss  = self.get_state_cost()
 
+        output = {"colision_loss": colision_loss.detach().numpy().tolist(),
+                  "pos": positions.detach().numpy().tolist(),
+                  "actions": actions.detach().numpy().tolist(),
+                  "total_cost": total_cost.detach().numpy().tolist()}
+
+        with open(filename,"w+") as f:
+            json.dump( output,  f)
+
+    def save_progress(self, filename):
         if hasattr(self.renderer, "config_filename"):
             config_filename = self.renderer.config_filename
         else:
@@ -433,18 +445,18 @@ def main():
     # start_state = torch.tensor([0.44, -0.23, 0.2, 0])
     # end_state = torch.tensor([-0.58, 0.66, 0.15, 0])
 
-
     #playground
-    filename = "playground.plan"
+    experiment_name = "playground_slide"
     renderer = get_nerf('configs/playground.txt')
-
-    # 2d across
-    # start_pos = torch.tensor([-0.0, -0.45, 0.12])
-    # end_pos = torch.tensor([0.02, 0.58, 0.65])
 
     # under slide
     start_pos = torch.tensor([-0.3, -0.27, 0.06])
     end_pos = torch.tensor([0.02, 0.58, 0.65])
+
+    # around slide
+    # start_pos = torch.tensor([-0.3, -0.27, 0.06])
+    # end_pos = torch.tensor([-0.14, 0.6, 0.78])
+
 
     #stonehenge
     # renderer = get_nerf('configs/stonehenge.txt')
@@ -458,12 +470,12 @@ def main():
 
 
     start_R = vec_to_rot_matrix( torch.tensor([0.0,0.0,0]))
-
     start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
-    filename = "line.plan"
-    renderer = get_manual_nerf("empty")
+    # experiment_name = "test" 
+    # filename = "line.plan"
+    # renderer = get_manual_nerf("empty")
     # renderer = get_manual_nerf("cylinder")
 
     cfg = {"T_final": 2,
@@ -475,28 +487,42 @@ def main():
             "epochs_update": 250,
             }
 
-    # traj = System(renderer, start_state, end_state, cfg)
-    traj = System.load_progress(filename, renderer)
-    traj.epochs_update = 250 #change depending on noise
 
-    # traj.a_star_init()
+    basefolder = "experiments" / pathlib.Path(experiment_name)
+    if basefolder.exists():
+        print(basefolder, "already exists!")
+        if input("Clear it before continuing? [y/N]:").lower() == "y":
+            shutil.rmtree(basefolder)
+    basefolder.mkdir()
+    (basefolder / "train_poses").mkdir()
+    (basefolder / "train_graph").mkdir()
+    print("created", basefolder)
+
+
+    traj = System(renderer, start_state, end_state, cfg)
+    # traj = System.load_progress(filename, renderer); traj.epochs_update = 250 #change depending on noise
+
+    traj.basefolder = basefolder
+
+    traj.a_star_init()
 
     # quadplot = QuadPlot()
     # traj.plot(quadplot)
     # quadplot.show()
 
-    # traj.learn_init()
+    traj.learn_init()
+
+    traj.save_progress(basefolder / "trajectory.pt")
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
     quadplot.show()
 
-    # traj.save_progress(filename)
 
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())
 
-    if True: # for mpc control
+    if False: # for mpc control
         sim = Simulator(start_state)
         sim.dt = traj.dt #Sim time step changes best on number of steps
 
@@ -527,22 +553,27 @@ def main():
             quadplot.trajectory( save, "b", show_cloud=False )
             quadplot.show()
 
-    if False:
-        sim = Simulator(start_state)
-        sim.dt = traj.dt #Sim time step changes best on number of steps
 
-        for step in range(cfg['steps']):
-            # for open loop control
-            action = traj.get_actions()[step,:].detach()
-            print(action)
-            sim.advance(action)
+        quadplot = QuadPlot()
+        traj.plot(quadplot)
+        quadplot.trajectory( sim, "r" )
+        quadplot.trajectory( save, "b", show_cloud=False )
+        quadplot.show()
+
+def OPEN_LOOP(traj):
+    sim = Simulator(traj.start_state)
+    sim.dt = traj.dt #Sim time step changes best on number of steps
+
+    for step in range(cfg['steps']):
+        action = traj.get_actions()[step,:].detach()
+        print(action)
+        sim.advance(action)
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
     quadplot.trajectory( sim, "r" )
     quadplot.trajectory( save, "b", show_cloud=False )
     quadplot.show()
-
 
 
 if __name__ == "__main__":
