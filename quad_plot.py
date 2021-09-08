@@ -63,6 +63,8 @@ class System:
         self.fade_out_epoch     = cfg['fade_out_epoch']
         self.fade_out_sharpness = cfg['fade_out_sharpness']
 
+        self.CHURCH = False
+
         self.dt = self.T_final / self.steps
 
         self.mass = 1
@@ -86,6 +88,8 @@ class System:
                                             torch.linspace(-0.02, 0.02,  5)), dim=-1)
         self.robot_body = body.reshape(-1, 3)
         # self.robot_body = torch.zeros(1,3)
+        if self.CHURCH:
+            self.robot_body = self.robot_body/2
 
         self.epoch = 0
 
@@ -101,10 +105,17 @@ class System:
 
     def a_star_init(self):
         side = 100 #PARAM grid size
-        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
 
-        # side, side, side, 3
-        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+        if self.CHURCH:
+            x_linspace = torch.linspace(-2,-1, side)
+            y_linspace = torch.linspace(-1,0, side)
+            z_linspace = torch.linspace(0,1, side)
+
+            coods = torch.stack( torch.meshgrid( x_linspace, y_linspace, z_linspace ), dim=-1)
+        else:
+            linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
+            # side, side, side, 3
+            coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
 
         kernel_size = 5 # 100/5 = 20. scene size of 2 gives a box size of 2/20 = 0.1 = drone size
         output = self.nerf(coods)
