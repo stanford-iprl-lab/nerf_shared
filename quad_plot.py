@@ -279,12 +279,6 @@ class System:
         fz = actions[:, 0].to(device)
         torques = torch.norm(actions[:, 1:], dim=-1).to(device)
 
-<<<<<<< HEAD
-        # multiplied by distance to prevent it from just speed tunnelling
-        distance = (torch.sum( vel**2 + 1e-5, dim = -1)**0.5).to(device)
-        density = (self.nerf( self.body_to_world(self.robot_body) )**2).to(device)
-        colision_prob = torch.mean( density, dim = -1) * distance
-=======
         # S, B, 3  =  S, _, 3 +      _, B, 3   X    S, _,  3
         B_body, B_omega = torch.broadcast_tensors(self.robot_body, omega[:,None,:])
         point_vels = vel[:,None,:] + torch.cross(B_body, B_omega, dim=-1)
@@ -297,7 +291,6 @@ class System:
         # multiplied by distance to prevent it from just speed tunnelling
         # S =   S,B * S,_
         colision_prob = torch.mean(density * distance[:,None], dim = -1) 
->>>>>>> adf073e8e20cac5e65a96c7414c3f89f67877f53
 
         if self.epoch < self.fade_out_epoch:
             t = torch.linspace(0,1, colision_prob.shape[0])
@@ -326,16 +319,12 @@ class System:
 
                 save_step = 50
                 if it%save_step == 0:
-<<<<<<< HEAD
-                    self.save_poses("paths/"+str(it//save_step)+"_testing.json", loss.clone().cpu().detach().numpy().tolist())
-=======
                     if hasattr(self, "basefolder"):
                         self.save_poses(self.basefolder / "train_poses" / (str(it//save_step)+".json"))
                         self.save_graph(self.basefolder / "train_graph" / (str(it//save_step)+".json"))
                     else:
                         print("WANRING: data not saved!")
 
->>>>>>> adf073e8e20cac5e65a96c7414c3f89f67877f53
 
         except KeyboardInterrupt:
             print("finishing early")
@@ -601,9 +590,5 @@ def OPEN_LOOP(traj):
     quadplot.trajectory( save, "b", show_cloud=False )
     quadplot.show()
 
-<<<<<<< HEAD
-=======
-
->>>>>>> adf073e8e20cac5e65a96c7414c3f89f67877f53
 if __name__ == "__main__":
     main()
