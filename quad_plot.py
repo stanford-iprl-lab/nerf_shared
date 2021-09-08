@@ -6,8 +6,8 @@ import torch.nn.functional as F
 import numpy as np
 
 import json
-import os
-import pickle
+import shutil
+import pathlib
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -63,6 +63,8 @@ class System:
         self.fade_out_epoch     = cfg['fade_out_epoch']
         self.fade_out_sharpness = cfg['fade_out_sharpness']
 
+        self.CHURCH = False
+
         self.dt = self.T_final / self.steps
 
         self.mass = 1
@@ -86,6 +88,8 @@ class System:
                                             torch.linspace(-0.02, 0.02,  5)), dim=-1)
         self.robot_body = body.reshape(-1, 3)
         # self.robot_body = torch.zeros(1,3)
+        if self.CHURCH:
+            self.robot_body = self.robot_body/2
 
         self.epoch = 0
 
@@ -101,10 +105,17 @@ class System:
 
     def a_star_init(self):
         side = 100 #PARAM grid size
-        linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
 
-        # side, side, side, 3
-        coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+        if self.CHURCH:
+            x_linspace = torch.linspace(-2,-1, side)
+            y_linspace = torch.linspace(-1,0, side)
+            z_linspace = torch.linspace(0,1, side)
+
+            coods = torch.stack( torch.meshgrid( x_linspace, y_linspace, z_linspace ), dim=-1)
+        else:
+            linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
+            # side, side, side, 3
+            coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
 
         kernel_size = 5 # 100/5 = 20. scene size of 2 gives a box size of 2/20 = 0.1 = drone size
         output = self.nerf(coods)
@@ -268,24 +279,31 @@ class System:
         fz = actions[:, 0].to(device)
         torques = torch.norm(actions[:, 1:], dim=-1).to(device)
 
+<<<<<<< HEAD
         # multiplied by distance to prevent it from just speed tunnelling
         distance = (torch.sum( vel**2 + 1e-5, dim = -1)**0.5).to(device)
         density = (self.nerf( self.body_to_world(self.robot_body) )**2).to(device)
         colision_prob = torch.mean( density, dim = -1) * distance
+=======
+        # S, B, 3  =  S, _, 3 +      _, B, 3   X    S, _,  3
+        B_body, B_omega = torch.broadcast_tensors(self.robot_body, omega[:,None,:])
+        point_vels = vel[:,None,:] + torch.cross(B_body, B_omega, dim=-1)
+
+        # S, B
+        distance = torch.sum( vel**2 + 1e-5, dim = -1)**0.5
+        # S, B
+        density = self.nerf( self.body_to_world(self.robot_body) )**2
+
+        # multiplied by distance to prevent it from just speed tunnelling
+        # S =   S,B * S,_
+        colision_prob = torch.mean(density * distance[:,None], dim = -1) 
+>>>>>>> adf073e8e20cac5e65a96c7414c3f89f67877f53
 
         if self.epoch < self.fade_out_epoch:
             t = torch.linspace(0,1, colision_prob.shape[0])
             position = self.epoch/self.fade_out_epoch
             mask = torch.sigmoid(self.fade_out_sharpness * (position - t)).to(device)
             colision_prob = colision_prob * mask
-
-        ##dynamics residual loss - make sure acceleration point in body frame z axis
-        ## S, 3, _     =   S, 3, 3  @ S, 3, _
-        #body_frame_accel   = ( rot_matrix.swapdims(-1,-2) @ accel[:,:,None]) [:,:,0]
-        ## pick out the ones we want to constrain (the rest are already constrained
-        #residue_angle = torch.atan2( torch.norm(body_frame_accel[:,:2], dim =-1 ) , body_frame_accel[:,2])
-        #print("residue_angle", residue_angle)
-
 
         #PARAM cost function shaping
         return 1000*fz**2 + 0.01*torques**4 + colision_prob * 1e6, colision_prob*1e6
@@ -308,7 +326,16 @@ class System:
 
                 save_step = 50
                 if it%save_step == 0:
+<<<<<<< HEAD
                     self.save_poses("paths/"+str(it//save_step)+"_testing.json", loss.clone().cpu().detach().numpy().tolist())
+=======
+                    if hasattr(self, "basefolder"):
+                        self.save_poses(self.basefolder / "train_poses" / (str(it//save_step)+".json"))
+                        self.save_graph(self.basefolder / "train_graph" / (str(it//save_step)+".json"))
+                    else:
+                        print("WANRING: data not saved!")
+
+>>>>>>> adf073e8e20cac5e65a96c7414c3f89f67877f53
 
         except KeyboardInterrupt:
             print("finishing early")
@@ -392,12 +419,19 @@ class System:
             pose_dict["loss"] = loss
             json.dump(pose_dict, f)
 
-    def save_progress(self, filename):
-        try:
-            os.remove(filename)
-        except FileNotFoundError:
-            pass
+    def save_graph(self, filename):
+        positions, vel, _, rot_matrix, omega, _, actions = self.calc_everything()
+        total_cost, colision_loss  = self.get_state_cost()
 
+        output = {"colision_loss": colision_loss.detach().numpy().tolist(),
+                  "pos": positions.detach().numpy().tolist(),
+                  "actions": actions.detach().numpy().tolist(),
+                  "total_cost": total_cost.detach().numpy().tolist()}
+
+        with open(filename,"w+") as f:
+            json.dump( output,  f)
+
+    def save_progress(self, filename):
         if hasattr(self.renderer, "config_filename"):
             config_filename = self.renderer.config_filename
         else:
@@ -437,18 +471,18 @@ def main():
     # start_state = torch.tensor([0.44, -0.23, 0.2, 0])
     # end_state = torch.tensor([-0.58, 0.66, 0.15, 0])
 
-
     #playground
-    filename = "playground.plan"
+    experiment_name = "playground_slide"
     renderer = get_nerf('configs/playground.txt')
-
-    # 2d across
-    # start_pos = torch.tensor([-0.0, -0.45, 0.12])
-    # end_pos = torch.tensor([0.02, 0.58, 0.65])
 
     # under slide
     start_pos = torch.tensor([-0.3, -0.27, 0.06])
     end_pos = torch.tensor([0.02, 0.58, 0.65])
+
+    # around slide
+    # start_pos = torch.tensor([-0.3, -0.27, 0.06])
+    # end_pos = torch.tensor([-0.14, 0.6, 0.78])
+
 
     #stonehenge
     # renderer = get_nerf('configs/stonehenge.txt')
@@ -462,12 +496,12 @@ def main():
 
 
     start_R = vec_to_rot_matrix( torch.tensor([0.0,0.0,0]))
-
     start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
-    filename = "line.plan"
-    renderer = get_manual_nerf("empty")
+    # experiment_name = "test" 
+    # filename = "line.plan"
+    # renderer = get_manual_nerf("empty")
     # renderer = get_manual_nerf("cylinder")
 
     cfg = {"T_final": 2,
@@ -479,28 +513,42 @@ def main():
             "epochs_update": 250,
             }
 
-    # traj = System(renderer, start_state, end_state, cfg)
-    traj = System.load_progress(filename, renderer)
-    traj.epochs_update = 250 #change depending on noise
 
-    # traj.a_star_init()
+    basefolder = "experiments" / pathlib.Path(experiment_name)
+    if basefolder.exists():
+        print(basefolder, "already exists!")
+        if input("Clear it before continuing? [y/N]:").lower() == "y":
+            shutil.rmtree(basefolder)
+    basefolder.mkdir()
+    (basefolder / "train_poses").mkdir()
+    (basefolder / "train_graph").mkdir()
+    print("created", basefolder)
+
+
+    traj = System(renderer, start_state, end_state, cfg)
+    # traj = System.load_progress(filename, renderer); traj.epochs_update = 250 #change depending on noise
+
+    traj.basefolder = basefolder
+
+    traj.a_star_init()
 
     # quadplot = QuadPlot()
     # traj.plot(quadplot)
     # quadplot.show()
 
-    # traj.learn_init()
+    traj.learn_init()
+
+    traj.save_progress(basefolder / "trajectory.pt")
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
     quadplot.show()
 
-    # traj.save_progress(filename)
 
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())
 
-    if True: # for mpc control
+    if False: # for mpc control
         sim = Simulator(start_state)
         sim.dt = traj.dt #Sim time step changes best on number of steps
 
@@ -531,15 +579,21 @@ def main():
             quadplot.trajectory( save, "b", show_cloud=False )
             quadplot.show()
 
-    if False:
-        sim = Simulator(start_state)
-        sim.dt = traj.dt #Sim time step changes best on number of steps
 
-        for step in range(cfg['steps']):
-            # for open loop control
-            action = traj.get_actions()[step,:].detach()
-            print(action)
-            sim.advance(action)
+        quadplot = QuadPlot()
+        traj.plot(quadplot)
+        quadplot.trajectory( sim, "r" )
+        quadplot.trajectory( save, "b", show_cloud=False )
+        quadplot.show()
+
+def OPEN_LOOP(traj):
+    sim = Simulator(traj.start_state)
+    sim.dt = traj.dt #Sim time step changes best on number of steps
+
+    for step in range(cfg['steps']):
+        action = traj.get_actions()[step,:].detach()
+        print(action)
+        sim.advance(action)
 
     quadplot = QuadPlot()
     traj.plot(quadplot)
@@ -547,5 +601,9 @@ def main():
     quadplot.trajectory( save, "b", show_cloud=False )
     quadplot.show()
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> adf073e8e20cac5e65a96c7414c3f89f67877f53
 if __name__ == "__main__":
     main()
