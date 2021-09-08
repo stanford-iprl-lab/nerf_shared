@@ -3,6 +3,7 @@ import quaternion
 import numpy as np
 from simulator import Simulation
 import torch
+import json
 
 #Helper functions
 
@@ -127,6 +128,8 @@ class Agent():
         self.I = cfg['I']
         self.invI = torch.inverse(self.I)
 
+        self.states_history = [self.x.clone().cpu().detach().numpy().tolist()]
+
     def reset(self):
         self.x = self.x0
         return
@@ -155,6 +158,8 @@ class Agent():
         new_pose = convert_blender_to_sim_pose(new_pose)
 
         img = self.sim.get_image(new_pose)
+
+        self.states_history.append(self.x.clone().cpu().detach().numpy().tolist())
 
         return new_pose, new_state, img[...,:3]
 
@@ -206,3 +211,10 @@ class Agent():
         next_state[15:] = omega + domega * self.dt
 
         return next_state
+
+    def save_data(self, filename):
+        true_states = {}
+        true_states['true_states'] = self.states_history
+        with open(filename,"w+") as f:
+            json.dump(true_states, f)
+        return

@@ -19,9 +19,6 @@ patch_typeguard()
 
 from load_nerf import get_nerf
 
-torch.manual_seed(0)
-np.random.seed(0)
-
 from quad_helpers import Simulator, QuadPlot
 from quad_helpers import rot_matrix_to_vec, vec_to_rot_matrix, next_rotation
 from quad_helpers import astar
@@ -311,12 +308,12 @@ class System:
 
                 save_step = 50
                 if it%save_step == 0:
-                    self.save_poses("paths/"+str(it//save_step)+"_testing.json")
+                    self.save_poses("paths/"+str(it//save_step)+"_testing.json", loss.clone().cpu().detach().numpy().tolist())
 
         except KeyboardInterrupt:
             print("finishing early")
 
-    def learn_update(self):
+    def learn_update(self, iteration):
         opt = torch.optim.Adam(self.params(), lr=self.lr)
 
         for it in range(self.epochs_update):
@@ -331,9 +328,9 @@ class System:
             # if (it > self.epochs_update and self.max_residual < 1e-3):
             #     break
 
-            # save_step = 50
-            # if it%save_step == 0:
-        # self.save_poses("paths/"+str(it//save_step)+"_testing.json")
+            save_step = 50
+            if it%save_step == 0:
+                self.save_poses("paths/"+str(it//save_step)+f'update{iteration}' + '.json', loss.clone().cpu().detach().numpy().tolist())
 
     @typechecked
     def update_state(self, measured_state: TensorType[18]):
@@ -379,7 +376,7 @@ class System:
         ax_right.plot(colision_loss.detach().numpy(), 'cyan', label="colision")
         ax.legend()
 
-    def save_poses(self, filename):
+    def save_poses(self, filename, loss):
         positions, _, _, rot_matrix, _, _, _ = self.calc_everything()
         poses = []
         pose_dict = {}
@@ -392,6 +389,7 @@ class System:
 
                 poses.append(pose.tolist())
             pose_dict["poses"] = poses
+            pose_dict["loss"] = loss
             json.dump(pose_dict, f)
 
     def save_progress(self, filename):

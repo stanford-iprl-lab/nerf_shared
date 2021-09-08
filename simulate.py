@@ -155,7 +155,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         # renderer = get_nerf('configs/stonehenge.txt')
         # stonehenge - simple
         start_pos = torch.tensor([-0.05,-0.9, -0.1])
-        end_pos   = torch.tensor([-0.5,0.9, 1.])
+        end_pos   = torch.tensor([-0.32,0.6, 0.37])
         # start_pos = torch.tensor([-1, 0, 0.2])
         # end_pos   = torch.tensor([ 1, 0, 0.5])
 
@@ -202,7 +202,6 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
             estimator = Estimator(N_iter, 512, 'interest_regions', renderer, dil_iter=3, kernel_size=5, lrate=.01, noise=None, sigma=0.0, amount=0., delta_brightness=0.)
 
         true_states = start_state.cpu().detach().numpy()
-        pose_estimates = []
 
         measured_states = []
         
@@ -220,7 +219,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
             true_states = np.vstack((true_states, true_state))
 
             plt.figure()
-            plt.imsave('./paths/gt_img.png', gt_img)
+            plt.imsave('./paths/true/'+ f'{iter}_gt_img.png', gt_img)
             plt.close()
 
             if nerf_filter == True:
@@ -249,7 +248,7 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
 
             if iter < cfg['steps'] - 4:
                 traj.update_state( measured_state )
-                traj.learn_update()
+                traj.learn_update(iter)
 
             #plot_trajectory(traj.get_full_states(), true_states)
 
@@ -257,7 +256,9 @@ def main_loop(P0: TensorType[4, 4], PT: TensorType[4, 4], T: int, N: int, N_iter
         print(measured_states)
         print(traj.get_full_states())
 
-        plot_trajectory(traj.get_full_states(), true_states)
+        #plot_trajectory(traj.get_full_states(), true_states)
+        estimator.save_data('./paths/estimator_data.json')
+        agent.save_data('./paths/agent_data.json')
 
     else:
         ####################################### DEBUGING ENVIRONMENT ####################################################3
