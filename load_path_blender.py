@@ -17,16 +17,19 @@ def load_training(experiment_name):
 
     save = 0
     while True:
-        filepath = bpy.path.abspath('//../experiments/' + experiment_name + '/train_poses/') +str(save)+".json"
+        filepath = bpy.path.abspath('//../experiments/' + experiment_name + '/train/') +str(save)+".json"
         if not os.path.isfile(filepath):
+            if save == 0:
+                bpy.context.window_manager.popup_menu(lambda s,c:s.layout.label(text=""), title = "can't find first file", icon = "ERROR")
             break
 
         bpy.context.scene.frame_set(save)
 
         print("LOADING SAVE #"+str(save))
         with open(filepath) as f:
-            for i, line in enumerate(f):
+            data = json.load(f)
 
+            for i in range(len(data['poses'])):
                 name = "path_"+str(i)
                 if save == 0:
                     new_object = object_to_copy.copy()
@@ -36,9 +39,9 @@ def load_training(experiment_name):
                 else:
                     new_object = bpy.data.objects[name]
 
-                pose = json.loads(line)
+                pose = data['poses'][i]
                 new_object.matrix_world = Matrix(pose)
-                # print(i, pose)
+                print(i, pose)
 
                 new_object.keyframe_insert(data_path="location")
                 if new_object.rotation_mode == "QUATERNION":
@@ -63,6 +66,6 @@ def get_endpoints():
 
 
 
-experiment_name = "playground_slide"
+experiment_name = "playground_testing"
 
 load_training(experiment_name)

@@ -320,8 +320,8 @@ class System:
                 save_step = 50
                 if it%save_step == 0:
                     if hasattr(self, "basefolder"):
-                        self.save_poses(self.basefolder / "train_poses" / (str(it//save_step)+".json"))
-                        self.save_graph(self.basefolder / "train_graph" / (str(it//save_step)+".json"))
+                        # self.save_poses(self.basefolder / "train_poses" / (str(it//save_step)+".json"))
+                        self.save_data(self.basefolder / "train" / (str(it//save_step)+".json"))
                     else:
                         print("WANRING: data not saved!")
 
@@ -404,14 +404,23 @@ class System:
                 json.dump(pose.tolist(), f)
                 f.write('\n')
 
-    def save_graph(self, filename):
+    def save_data(self, filename):
         positions, vel, _, rot_matrix, omega, _, actions = self.calc_everything()
         total_cost, colision_loss  = self.get_state_cost()
 
+        poses = torch.zeros((positions.shape[0], 4,4))
+        poses[:, :3, :3] = rot_matrix
+        poses[:, :3, 3]  = positions
+        poses[:, 3,3] = 1
+
+        full_states = self.get_full_states()
+
         output = {"colision_loss": colision_loss.detach().numpy().tolist(),
-                  "pos": positions.detach().numpy().tolist(),
+                  "poses": poses.detach().numpy().tolist(),
                   "actions": actions.detach().numpy().tolist(),
-                  "total_cost": total_cost.detach().numpy().tolist()}
+                  "total_cost": total_cost.detach().numpy().tolist(),
+                  "full_states": full_states.detach().numpy().tolist(),
+                  }
 
         with open(filename,"w+") as f:
             json.dump( output,  f)
@@ -451,22 +460,20 @@ class System:
 
 def main():
 
-    # violin - astar
-    # renderer = get_nerf('configs/violin.txt')
-    # start_state = torch.tensor([0.44, -0.23, 0.2, 0])
-    # end_state = torch.tensor([-0.58, 0.66, 0.15, 0])
+    church = False
 
     #playground
-    experiment_name = "playground_slide"
+    # experiment_name = "playground_slide"
+    experiment_name = "playground_testing"
     renderer = get_nerf('configs/playground.txt')
 
     # under slide
-    start_pos = torch.tensor([-0.3, -0.27, 0.06])
-    end_pos = torch.tensor([0.02, 0.58, 0.65])
+    # start_pos = torch.tensor([-0.3, -0.27, 0.06])
+    # end_pos = torch.tensor([0.02, 0.58, 0.65])
 
     # around slide
-    # start_pos = torch.tensor([-0.3, -0.27, 0.06])
-    # end_pos = torch.tensor([-0.14, 0.6, 0.78])
+    start_pos = torch.tensor([-0.3, -0.27, 0.06])
+    end_pos = torch.tensor([-0.14, 0.6, 0.78])
 
 
     #stonehenge
@@ -480,14 +487,22 @@ def main():
     # end_pos   = torch.tensor([ 1, 0, 0.5])
 
 
-    start_R = vec_to_rot_matrix( torch.tensor([0.0,0.0,0]))
-    start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
-    end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
+    # church
+    # renderer = get_nerf('configs/church.txt')
+    # experiment_name = "church_test" 
+    # start_state = torch.tensor([-0.06, -0.79, 0.2, 0])
+    # end_state = torch.tensor([-0.46, 0.55, 0.16, 0])
+    # church = True
+
 
     # experiment_name = "test" 
     # filename = "line.plan"
     # renderer = get_manual_nerf("empty")
     # renderer = get_manual_nerf("cylinder")
+
+    start_R = vec_to_rot_matrix( torch.tensor([0.0,0.0,0]))
+    start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
+    end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
 
     cfg = {"T_final": 2,
             "steps": 20,
@@ -505,15 +520,16 @@ def main():
         if input("Clear it before continuing? [y/N]:").lower() == "y":
             shutil.rmtree(basefolder)
     basefolder.mkdir()
-    (basefolder / "train_poses").mkdir()
-    (basefolder / "train_graph").mkdir()
+    (basefolder / "train").mkdir()
     print("created", basefolder)
 
 
     traj = System(renderer, start_state, end_state, cfg)
     # traj = System.load_progress(filename, renderer); traj.epochs_update = 250 #change depending on noise
 
+
     traj.basefolder = basefolder
+    traj.church = church
 
     traj.a_star_init()
 
