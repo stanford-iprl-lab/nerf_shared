@@ -29,7 +29,7 @@ def plot_nerf(ax, nerf):
     density = nerf(coods)
     density = density.detach().numpy()
 
-    ax.pcolormesh(coods[...,0],coods[...,1],  density, cmap = cm.binary, shading='auto')
+    ax.pcolormesh(coods[...,0],coods[...,1],  density * 0.9, cmap = cm.binary, shading='auto', vmin = 0, vmax=1)
 
 class System:
     def __init__(self, start_state, end_state, steps):
@@ -156,17 +156,30 @@ class System:
                 ax.plot( *state_body.T, color+".", ms=72./ax.figure.dpi, alpha = alpha)
 
         # PLOTS AXIS
-        size = 0.5
-        points = torch.tensor( [[0, 0], [size, 0], [0, size]])
-        colors = ["r", "b"]
+        # if show_cloud:
+        #     size = 0.5
+        #     points = torch.tensor( [[0, 0], [size, 0], [0, size]])
+        #     colors = ["r", "b"]
 
-        # S, 3, 2
+        #     # S, 3, 2
+        #     points_world_frame = self.body_to_world(points).detach().numpy()
+        #     for state_axis in points_world_frame:
+        #         for i in range(1, 3):
+        #             ax.plot(state_axis[[0,i], 0],
+        #                     state_axis[[0,i], 1],
+        #                     c=colors[i - 1], alpha = alpha)
+
+        # body = torch.stack( torch.meshgrid( torch.linspace(-0.5, 0.5, 10), 
+        #                                     torch.linspace(-  1,   1, 10) ), dim=-1)
+
+        #plot box
+        points = torch.tensor( [[-0.5, -1], [-0.5, 1], [0.5, 1], [0.5, -1]])
         points_world_frame = self.body_to_world(points).detach().numpy()
         for state_axis in points_world_frame:
-            for i in range(1, 3):
-                ax.plot(state_axis[[0,i], 0],
-                        state_axis[[0,i], 1],
-                        c=colors[i - 1], alpha = alpha)
+            for i in range(4):
+                ax.plot(state_axis[[i,(i+1)%4], 0],
+                        state_axis[[i,(i+1)%4], 1],
+                        c=color, alpha = alpha)
 
 
 def main():
@@ -181,18 +194,19 @@ def main():
 
     opt = torch.optim.Adam(traj.params(), lr=0.05)
 
-    fig = plt.figure(figsize=plt.figaspect(1))
+    fig = plt.figure(figsize=plt.figaspect(1.))
+    
     ax_map = fig.add_subplot(1, 1, 1)
 
-    for it in range(1500):
+    for it in range(1200):
         opt.zero_grad()
         loss = traj.total_cost()
         print(it, loss)
         loss.backward()
 
-        if it ==   0: traj.plot_map(ax_map, color = "r",show_cloud = False,  alpha = 0.5)
+        if it ==   0: traj.plot_map(ax_map, color = "r",show_cloud = False,  alpha = 0.35)
         # if it == 100: traj.plot_map(ax_map, color = "y", alpha = 0.5)
-        if it == 400: traj.plot_map(ax_map, color = "b", show_cloud = False, alpha = 0.5)
+        if it == 400: traj.plot_map(ax_map, color = "b", show_cloud = False, alpha = 0.35)
         # if it == 500: traj.plot_map(ax_map, color = "b", alpha = 0.5)
 
         opt.step()
