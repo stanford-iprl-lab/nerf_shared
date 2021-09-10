@@ -11,13 +11,16 @@ object_to_copy = bpy.data.objects["tim_drone"]
 def load_MPC(experiment_name):
     pass
 
+TYPE = "mpc"
+#TYPE = "train"
+
 def load_training(experiment_name):
-    collection = bpy.data.collections.new(experiment_name +"_train")
+    collection = bpy.data.collections.new(experiment_name +"_"+TYPE)
     bpy.context.scene.collection.children.link(collection)
 
     save = 0
     while True:
-        filepath = bpy.path.abspath('//../experiments/' + experiment_name + '/train/') +str(save)+".json"
+        filepath = bpy.path.abspath('//../experiments/' + experiment_name + '/'+TYPE+'/') +str(save)+".json"
         if not os.path.isfile(filepath):
             if save == 0:
                 bpy.context.window_manager.popup_menu(lambda s,c:s.layout.label(text=""), title = "can't find first file", icon = "ERROR")
@@ -62,10 +65,15 @@ def get_endpoints():
     s += "\n"
     s += 'end_pos = torch.tensor(' + str( e_loc ) +")"
     s += "\n"
+    if False:
+        s += 'start_R =' + bpy.data.objects['Start'].matrix_world.__repr__().replace("Matrix","torch.tensor") + "[:3,:3]"
+        s += "\n"
+        s += 'end_R ='   + bpy.data.objects['End'].matrix_world.__repr__().replace("Matrix","torch.tensor") + "[:3,:3]"
+        s += "\n"
     print(s)
 
 
 
-experiment_name = "playground_testing"
+experiment_name = "stonehenge_astar"
 
 load_training(experiment_name)

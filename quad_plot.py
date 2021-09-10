@@ -103,21 +103,29 @@ class System:
 
         return torch.cat( [pos, torch.tensor([angle]) ], dim = -1).detach()
 
-    def a_star_init(self):
+    def a_star_init(self, kernel_size = 5):
         side = 100 #PARAM grid size
 
         if self.CHURCH:
             x_linspace = torch.linspace(-2,-1, side)
-            y_linspace = torch.linspace(-1,0, side)
-            z_linspace = torch.linspace(0,1, side)
+            y_linspace = torch.linspace(-1.2,-0.2, side)
+            z_linspace = torch.linspace(0.4,1.4, side)
 
             coods = torch.stack( torch.meshgrid( x_linspace, y_linspace, z_linspace ), dim=-1)
+            # kernel_size = 2 # 100/5 = 20. scene size of 2 gives a box size of 2/20 = 0.1 = drone size
         else:
             linspace = torch.linspace(-1,1, side) #PARAM extends of the thing
             # side, side, side, 3
             coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+            # kernel_size = 5 # 100/5 = 20. scene size of 2 gives a box size of 2/20 = 0.1 = drone size
+            # kernel_size = 4
 
-        kernel_size = 5 # 100/5 = 20. scene size of 2 gives a box size of 2/20 = 0.1 = drone size
+
+        min_value = coods[0,0,0,:]
+        side_length = coods[-1,-1,-1,:] - coods[0,0,0,:]
+        print(min_value)
+        print(side_length)
+
         output = self.nerf(coods)
         maxpool = torch.nn.MaxPool3d(kernel_size = kernel_size)
         #PARAM cut off such that neural network outputs zero (pre shifted sigmoid)
@@ -127,19 +135,22 @@ class System:
 
         grid_size = side//kernel_size
 
+
         #convert to index cooredinates
-        start_grid_float = grid_size*(self.start_state[:3] + 1)/2
-        end_grid_float   = grid_size*(self.end_state  [:3] + 1)/2
+        start_grid_float = grid_size*(self.start_state[:3] - min_value)/side_length
+        end_grid_float   = grid_size*(self.end_state  [:3] - min_value)/side_length
         start = tuple(int(start_grid_float[i]) for i in range(3) )
         end =   tuple(int(end_grid_float[i]  ) for i in range(3) )
 
         print(start, end)
         path = astar(occupied, start, end)
+        print(path)
 
         # convert from index cooredinates
-        squares =  2* (torch.tensor( path, dtype=torch.float)/grid_size) -1
+        squares =  side_length * (torch.tensor(path, dtype=torch.float)/grid_size) + min_value
+        print(squares)
 
-        #adding way
+        #adding yaw
         states = torch.cat( [squares, torch.zeros( (squares.shape[0], 1) ) ], dim=-1)
 
         #prevents weird zero derivative issues
@@ -461,48 +472,11 @@ class System:
 def main():
 
     church = False
-
-    #playground
-    # experiment_name = "playground_slide"
-    experiment_name = "playground_testing"
-    renderer = get_nerf('configs/playground.txt')
-
-    # under slide
-    # start_pos = torch.tensor([-0.3, -0.27, 0.06])
-    # end_pos = torch.tensor([0.02, 0.58, 0.65])
-
-    # around slide
-    start_pos = torch.tensor([-0.3, -0.27, 0.06])
-    end_pos = torch.tensor([-0.14, 0.6, 0.78])
-
-
-    #stonehenge
-    # renderer = get_nerf('configs/stonehenge.txt')
-    # start_state = torch.tensor([-0.06, -0.79, 0.2, 0])
-    # end_state = torch.tensor([-0.46, 0.55, 0.16, 0])
-
-    # start_pos = torch.tensor([-0.05,-0.9, 0.2])
-    # end_pos   = torch.tensor([-1 , 0.7, 0.35])
-    # start_pos = torch.tensor([-1, 0, 0.2])
-    # end_pos   = torch.tensor([ 1, 0, 0.5])
-
-
-    # church
-    # renderer = get_nerf('configs/church.txt')
-    # experiment_name = "church_test" 
-    # start_state = torch.tensor([-0.06, -0.79, 0.2, 0])
-    # end_state = torch.tensor([-0.46, 0.55, 0.16, 0])
-    # church = True
-
-
-    # experiment_name = "test" 
-    # filename = "line.plan"
-    # renderer = get_manual_nerf("empty")
-    # renderer = get_manual_nerf("cylinder")
+    astar = True
+    kernel = 5
 
     start_R = vec_to_rot_matrix( torch.tensor([0.0,0.0,0]))
-    start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
-    end_state   = torch.cat( [end_pos,   torch.zeros(3), torch.eye(3).reshape(-1), torch.zeros(3)], dim=0 )
+    end_R = vec_to_rot_matrix( torch.tensor([0.0,0.0,0]))
 
     cfg = {"T_final": 2,
             "steps": 20,
@@ -510,62 +484,147 @@ def main():
             "epochs_init": 2500,
             "fade_out_epoch": 0,
             "fade_out_sharpness": 10,
-            "epochs_update": 250,
+            "epochs_update": 70,
             }
 
+    #playground
+    # experiment_name = "playground_slide"
+    # experiment_name = "playground_testing"
+    # renderer = get_nerf('configs/playground.txt')
+
+    # under slide
+    # start_pos = torch.tensor([-0.3, -0.27, 0.06])
+    # end_pos = torch.tensor([0.02, 0.58, 0.65])
+
+    # around slide
+    # start_pos = torch.tensor([-0.3, -0.27, 0.06])
+    # end_pos = torch.tensor([-0.14, 0.6, 0.78])
+
+
+    #stonehenge
+    renderer = get_nerf('configs/stonehenge.txt')
+    experiment_name = "stonehenge_astar" 
+    start_pos = torch.tensor([0.39, -0.67, 0.2])
+    end_pos = torch.tensor([-0.4, 0.55, 0.16])
+    astar = True
+    kernel = 4
+    # experiment_name = "stonehenge_needle" 
+    # # neadle
+    # start_pos = torch.tensor([-0.04, -0.8, 0.2])
+    # end_pos = torch.tensor([-0.4, 0.55, 0.16])
+
+
+
+
+    # church
+    # renderer = get_nerf('configs/church.txt')
+    #side
+    # experiment_name = "church_test" 
+    # start_pos = torch.tensor([-1.59, -0.9, 0.86])
+    # end_pos = torch.tensor([-1.48, -0.49, 0.56])
+    #top down
+    # experiment_name = "church_top_a" 
+    # start_pos = torch.tensor([-1.33, -1.02, 0.6])
+    # end_pos = torch.tensor([-1.5, -0.49, 0.56])
+    # church = True
+    # kernel = 2
+
+    # experiment_name = "church_acro" 
+    # start_pos = torch.tensor([-1.24, -0.47, 0.56])
+    # end_pos = torch.tensor([-1.46, -0.65, 0.84])
+    # start_R =torch.tensor(((0.7071067690849304, -0.7071067690849304, 0.0, -1.2434672117233276),
+    #         (0.7071067690849304, 0.7071067690849304, 0.0, -0.46547752618789673),
+    #         (0.0, 0.0, 1.0, 0.5591349005699158),
+    #         (0.0, 0.0, 0.0, 1.0)))[:3,:3]
+    # end_R =torch.tensor(((0.7071067690849304, 3.0908619663705394e-08, 0.7071067690849304, -1.4600000381469727),
+    #         (0.7071067690849304, -3.0908619663705394e-08, -0.7071067690849304, -0.6499999761581421),
+    #         (0.0, 1.0, -4.371138828673793e-08, 0.8399999737739563),
+    #         (0.0, 0.0, 0.0, 1.0)))[:3,:3]
+    # astar = False
+    # kernel = 2
+    # cfg = {"T_final": 2,
+    #         "steps": 30,
+    #         "lr": 0.002,
+    #         "epochs_init": 2500,
+    #         "fade_out_epoch": 0,
+    #         "fade_out_sharpness": 10,
+    #         "epochs_update": 250,
+    #         }
+
+
+    # experiment_name = "test" 
+    # filename = "line.plan"
+    # renderer = get_manual_nerf("empty")
+    # renderer = get_manual_nerf("cylinder")
+
+    start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
+    end_state   = torch.cat( [end_pos,   torch.zeros(3), end_R.reshape(-1), torch.zeros(3)], dim=0 )
+
+    LOAD = True
 
     basefolder = "experiments" / pathlib.Path(experiment_name)
-    if basefolder.exists():
-        print(basefolder, "already exists!")
-        if input("Clear it before continuing? [y/N]:").lower() == "y":
-            shutil.rmtree(basefolder)
-    basefolder.mkdir()
-    (basefolder / "train").mkdir()
+
+    if not LOAD:
+        if basefolder.exists():
+            print(basefolder, "already exists!")
+            if input("Clear it before continuing? [y/N]:").lower() == "y":
+                shutil.rmtree(basefolder)
+        basefolder.mkdir()
+        (basefolder / "train").mkdir()
+
     print("created", basefolder)
 
 
-    traj = System(renderer, start_state, end_state, cfg)
-    # traj = System.load_progress(filename, renderer); traj.epochs_update = 250 #change depending on noise
-
+    if LOAD:
+        traj = System.load_progress(basefolder / "trajectory.pt", renderer); traj.epochs_update = cfg['epochs_update'] #change depending on noise
+    else:
+        traj = System(renderer, start_state, end_state, cfg)
+        if astar:
+            traj.a_star_init(kernel)
 
     traj.basefolder = basefolder
-    traj.church = church
-
-    traj.a_star_init()
+    traj.CHURCH = church
 
     # quadplot = QuadPlot()
     # traj.plot(quadplot)
     # quadplot.show()
 
-    traj.learn_init()
+    if not LOAD:
+        traj.learn_init()
+        traj.save_progress(basefolder / "trajectory.pt")
 
-    traj.save_progress(basefolder / "trajectory.pt")
-
-    quadplot = QuadPlot()
-    traj.plot(quadplot)
-    quadplot.show()
+    # quadplot = QuadPlot()
+    # traj.plot(quadplot)
+    # quadplot.show()
 
 
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())
 
-    if False: # for mpc control
+    if True: # for mpc control
         sim = Simulator(start_state)
         sim.dt = traj.dt #Sim time step changes best on number of steps
 
+        if (basefolder / "mpc").exists():
+            (basefolder / "mpc").rmdir()
+
+        (basefolder / "mpc").mkdir()
+
         for step in range(cfg['steps']):
+            traj.save_data(basefolder / "mpc" / (str(step)+".json"))
+
             action = traj.get_next_action().clone().detach()
             print(action)
 
             state_noise = torch.normal(mean= 0, std=torch.tensor( [0.01]*3 + [0.01]*3 + [0]*9 + [0.005]*3 ))
-            # state_noise[3] += 0.0 #crosswind
+            state_noise[3] += -0.1 #crosswind
 
             # sim.advance(action) # no noise
             sim.advance(action, state_noise) #add noise
             measured_state = sim.get_current_state().clone().detach()
 
             measurement_noise = torch.normal(mean= 0, std=torch.tensor( [0.01]*3 + [0.02]*3 + [0]*9 + [0.005]*3 ))
-            measured_state += measurement_noise
+            # measured_state += measurement_noise
             traj.update_state(measured_state) 
 
             traj.learn_update()

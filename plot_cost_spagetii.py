@@ -11,6 +11,7 @@ import matplotlib.patches as mpatches
 
 # name = "playground_mpc_4"
 name = "playground_mpc_2"
+name = "stonehenge_mpc"
 
 
 # frames = [0, 5, 49]
@@ -45,7 +46,11 @@ for frame in range(end_frame):
     data = json.load(open("experiments/" + name +"/mpc/"+str(frame)+".json"))
 
     # color = "k"
-    color = {0:pink, 8:blue, 14:green}.get(frame, "k")
+    # color = {0:pink, 8:blue, 14:green}.get(frame, "k")
+
+    color = {0:pink, 10:blue, 18:green}.get(frame, "k")
+
+
     ax.plot(frame + np.arange(len(data['total_cost'])), data['total_cost'], c =color, 
             alpha = 0.2 if color =="k" else 0.8,
             linewidth= 1 if color =='k' else 2)

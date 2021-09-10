@@ -142,7 +142,7 @@ def get_nerf(config = 'configs/playground.txt'):
     return renderer
 
 
-def show_voxels(output, kernel_size = 5):
+def show_voxels(output, kernel_size = 2):
     maxpool = torch.nn.MaxPool3d(kernel_size = kernel_size)
 
     print(output.shape)
@@ -150,7 +150,7 @@ def show_voxels(output, kernel_size = 5):
     print(output.shape)
 
     ax = plt.figure().add_subplot(projection='3d')
-    ax.voxels(output > 0.33,  edgecolor='k') #0.33 for violin
+    ax.voxels(output > .33,  edgecolor='k') #0.33 for violin, playground
     plt.show()
 
 def show_projection(coods, output, dim="y", show_coords=True, max_project = False):
@@ -185,16 +185,16 @@ def main():
     nerf = get_nerf("configs/church.txt")
 
     side = 100
-    linspace = torch.linspace(-1,1, side)
+    # linspace = torch.linspace(-1,1, side)
+    # coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
 
     x_linspace = torch.linspace(-2,-1, side)
-    y_linspace = torch.linspace(-1,0, side)
-    z_linspace = torch.linspace(0,1, side)
-
+    y_linspace = torch.linspace(-1.2,-0.2, side)
+    # y_linspace = torch.linspace(-0.5,0.5, side)
+    z_linspace = torch.linspace(0.4,1.4, side)
     coods = torch.stack( torch.meshgrid( x_linspace, y_linspace, z_linspace ), dim=-1)
 
-    # side, side, side, 3
-    # coods = torch.stack( torch.meshgrid( linspace, linspace, linspace ), dim=-1)
+    # side, side, side     :   side, side, side, 3
     output = nerf.get_density(coods)
 
     # show_voxels(output)
