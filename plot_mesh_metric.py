@@ -30,8 +30,8 @@ ax_twin = ax.twinx()
 for frame,color in zip(frames, colors):
     data = json.load(open("experiments/" + name +"/train_vol/"+str(frame)+".json"))
 
-    ax.plot(data['mesh_colision'], c =color, linestyle='--')
-    ax_twin.plot(data['colision_loss'], c=color)
+    ax.plot(data['mesh_colision'], c =color, linestyle='--', linewidth =3)
+    ax_twin.plot(data['colision_loss'], c=color, linewidth =3)
 
     patch = mpatches.Patch(color=color, label = "iteration "+str(frame))
     handles.append(patch)

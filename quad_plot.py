@@ -526,30 +526,31 @@ def main():
     # experiment_name = "church_top_a" 
     # start_pos = torch.tensor([-1.33, -1.02, 0.6])
     # end_pos = torch.tensor([-1.5, -0.49, 0.56])
-    # church = True
+    church = True
     # kernel = 2
 
-    # experiment_name = "church_acro" 
-    # start_pos = torch.tensor([-1.24, -0.47, 0.56])
-    # end_pos = torch.tensor([-1.46, -0.65, 0.84])
-    # start_R =torch.tensor(((0.7071067690849304, -0.7071067690849304, 0.0, -1.2434672117233276),
-    #         (0.7071067690849304, 0.7071067690849304, 0.0, -0.46547752618789673),
-    #         (0.0, 0.0, 1.0, 0.5591349005699158),
-    #         (0.0, 0.0, 0.0, 1.0)))[:3,:3]
-    # end_R =torch.tensor(((0.7071067690849304, 3.0908619663705394e-08, 0.7071067690849304, -1.4600000381469727),
-    #         (0.7071067690849304, -3.0908619663705394e-08, -0.7071067690849304, -0.6499999761581421),
-    #         (0.0, 1.0, -4.371138828673793e-08, 0.8399999737739563),
-    #         (0.0, 0.0, 0.0, 1.0)))[:3,:3]
-    # astar = False
-    # kernel = 2
-    # cfg = {"T_final": 2,
-    #         "steps": 30,
-    #         "lr": 0.002,
-    #         "epochs_init": 2500,
-    #         "fade_out_epoch": 0,
-    #         "fade_out_sharpness": 10,
-    #         "epochs_update": 250,
-    #         }
+    renderer = get_nerf('configs/church.txt')
+    experiment_name = "church_acro2"
+    end_pos = torch.tensor([-1.24, -0.47, 0.56])
+    start_pos = torch.tensor([-1.46, -0.65, 0.84])
+    end_R =torch.tensor(((0.7071067690849304, -0.7071067690849304, 0.0, -1.2434672117233276),
+            (0.7071067690849304, 0.7071067690849304, 0.0, -0.46547752618789673),
+            (0.0, 0.0, 1.0, 0.5591349005699158),
+            (0.0, 0.0, 0.0, 1.0)))[:3,:3]
+    start_R =torch.tensor(((0.7071067690849304, 3.0908619663705394e-08, 0.7071067690849304, -1.4600000381469727),
+            (0.7071067690849304, -3.0908619663705394e-08, -0.7071067690849304, -0.6499999761581421),
+            (0.0, 1.0, -4.371138828673793e-08, 0.8399999737739563),
+            (0.0, 0.0, 0.0, 1.0)))[:3,:3]
+    astar = False
+    kernel = 2
+    cfg = {"T_final": 2,
+            "steps": 30,
+            "lr": 0.002,
+            "epochs_init": 2500,
+            "fade_out_epoch": 0,
+            "fade_out_sharpness": 10,
+            "epochs_update": 250,
+            }
 
 
     # experiment_name = "test" 
@@ -560,7 +561,7 @@ def main():
     start_state = torch.cat( [start_pos, torch.tensor([0,0,0]), start_R.reshape(-1), torch.zeros(3)], dim=0 )
     end_state   = torch.cat( [end_pos,   torch.zeros(3), end_R.reshape(-1), torch.zeros(3)], dim=0 )
 
-    LOAD = True
+    LOAD = False
 
     basefolder = "experiments" / pathlib.Path(experiment_name)
 
@@ -601,7 +602,7 @@ def main():
     save = Simulator(start_state)
     save.copy_states(traj.get_full_states())
 
-    if True: # for mpc control
+    if False: # for mpc control
         sim = Simulator(start_state)
         sim.dt = traj.dt #Sim time step changes best on number of steps
 
