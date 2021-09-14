@@ -3,10 +3,10 @@
 @import "{{ site.theme }}";
 
 .author-name{
-	@media (max-width: 544px) {
+	font-size: 1rem;
+	@media (min-width: 544px) {
 		font-size: 1.25rem;
 	}
-
 	@media (min-width: 992px) {
 		font-size: 1.5rem;
 	}
