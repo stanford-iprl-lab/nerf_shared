@@ -1,0 +1,48 @@
+---
+---
+@import "{{ site.theme }}";
+
+.author-name{
+	@media (max-width: 544px) {
+		font-size: 1.25rem;
+	}
+
+	@media (min-width: 992px) {
+		font-size: 1.5rem;
+	}
+
+}
+
+.icon{
+	color: white;
+	font-size: 2rem;
+	@media (min-width: 544px) {
+		font-size: 2.5rem;
+	}
+
+	@media (min-width: 992px) {
+		font-size: 3rem;
+	}
+}
+
+.icon:hover{
+	color: #A9A9A9;
+}
+
+.abstract{
+	@media (max-width: 768px) {
+		font-size: 0.9rem;
+	}
+
+	@media (min-width: 768px) {
+		font-size: 0.9rem;
+	}
+
+	@media (min-width: 992px) {
+		font-size: 1rem;
+	}
+}
+
+.abstract-btn{
+	color: #606c71;
+}

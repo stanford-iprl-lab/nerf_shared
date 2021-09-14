@@ -34,6 +34,22 @@ plugins:
   - jekyll-feed
   - jekyll-remote-theme
 
+authors:
+  - name: Michal Adamkiewicz*
+    website: https://profiles.stanford.edu/michal-adamkiewicz
+  - name: Timothy Chen*
+    website: https://profiles.stanford.edu/timothy-chen
+  - name: Adam Caccavale
+    website: https://msl.stanford.edu/people/adamcaccavale
+  - name: Rachel Gardner
+    website: https://rachel-gardner.com/
+  - name: Preston Culbertson 
+    website: https://web.stanford.edu/~pculbert/
+  - name: Jeannette Bohg
+    website: https://web.stanford.edu/~bohg/
+  - name: Mac Schwager
+    website: https://web.stanford.edu/~schwager/
+    
 # Exclude from processing.
 # The following items will not be processed, by default.
 # Any item listed under the `exclude:` key here will be automatically added to
