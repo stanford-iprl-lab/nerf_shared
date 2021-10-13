@@ -32,7 +32,7 @@ class Renderer():
 
         batch_rays = torch.stack([rays_o, rays_d], 0)
 
-        rgb, _, _, _ = render(self.H, self.W, self.K, chunk=self.chunk, rays=batch_rays, **self.render_kwargs)
+        rgb, disp_map, acc_map, extras = render(self.H, self.W, self.K, chunk=self.chunk, rays=batch_rays, **self.render_kwargs)
 
         return rgb
 
