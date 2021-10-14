@@ -9,11 +9,6 @@ from typeguard import typechecked
 from nerf import NeRF
 from poses import Pose
 
-
-@typechecked
-def render(nerf: NeRF, camera_pose: Pose):
-    raise NotImplemented
-
 class Renderer:
     def __init__(self, nerf: NeRF):
         raise NotImplemented
