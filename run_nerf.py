@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 from run_nerf_helpers import *
 from nerf_core import *
-from simulate import *
+# from simulate import *
 
 from load_llff import load_llff_data
 from load_deepvoxels import load_dv_data
@@ -174,22 +174,22 @@ def train():
             return
 
 ####################### EXECUTING MAIN LOOP ##########################################
-    else:
+    # else:
         
-        render_args = {'hwf': hwf, 'K': K, 'chunk': args.chunk}
-        trajsavedir = os.path.join(basedir, expname, 'trajectory_viz')
-        os.makedirs(trajsavedir, exist_ok=True)
+    #     render_args = {'hwf': hwf, 'K': K, 'chunk': args.chunk}
+    #     trajsavedir = os.path.join(basedir, expname, 'trajectory_viz')
+    #     os.makedirs(trajsavedir, exist_ok=True)
 
-        P0 = torch.eye(4)
-        PT = torch.eye(4)
-        T = 5
-        N = 5
-        N_iter = 300
-        scene_dir = './scenes/' + expname + '/scene.gltf'
+    #     P0 = torch.eye(4)
+    #     PT = torch.eye(4)
+    #     T = 5
+    #     N = 5
+    #     N_iter = 300
+    #     scene_dir = './scenes/' + expname + '/scene.gltf'
         
-        main_loop(P0, PT, T, N, N_iter, trajsavedir, render_args, render_kwargs_train, scene_dir)
+    #     main_loop(P0, PT, T, N, N_iter, trajsavedir, render_args, render_kwargs_train, scene_dir)
 
-        return
+    #     return
         
 
     # Prepare raybatch tensor if batching random rays

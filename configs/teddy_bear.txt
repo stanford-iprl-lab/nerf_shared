@@ -1,0 +1,25 @@
+expname = teddy_bear_TEST
+basedir = ./logs
+datadir = ./data/nerf_synthetic/teddy_bear_TEST
+dataset_type = blender
+
+no_batching = True
+
+use_viewdirs = True
+white_bkgd = False
+lrate_decay = 500
+
+N_rand = 1024
+N_samples = 64
+N_importance = 128
+
+precrop_iters = 500
+precrop_frac = 0.5
+
+half_res = True
+testskip = 1
+
+i_video = 200000
+i_testset = 10000
+
+multires = 12
