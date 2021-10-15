@@ -151,8 +151,6 @@ def train():
     # Short circuit if only rendering out from trained model
     if args.render_only:
         print('RENDER ONLY')
-
-        print('K', K)
  
         with torch.no_grad():
             if args.render_test:

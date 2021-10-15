@@ -23,7 +23,7 @@ class Train():
     def __init__(self, args):
         self.args = args
 
-    def load_data(self):
+    def load_datasets(self):
         # Load data
         K = None
         if args.dataset_type == 'llff':
@@ -106,8 +106,20 @@ class Train():
                 [0, focal, 0.5*H],
                 [0, 0, 1]
             ])
+        
+        self.bds_dict = {
+        'near' : near,
+        'far' : far,
+        }
 
-    def create_log_dir(self):
+        i_split = i_train, i_val, i_test
+
+        if args.render_test:
+            render_poses = np.array(poses[i_test])
+
+        return images, poses, render_poses, hwf, i_split, K, self.bds_dict
+
+    def copy_log_dir(self):
         # Create log dir and copy the config file
         basedir = args.basedir
         expname = args.expname
@@ -127,25 +139,19 @@ class Train():
         render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
         global_step = start
 
-        bds_dict = {
-            'near' : near,
-            'far' : far,
-        }
-        render_kwargs_train.update(bds_dict)
-        render_kwargs_test.update(bds_dict)
+        render_kwargs_train.update(self.bds_dict)
+        render_kwargs_test.update(self.bds_dict)
 
+        return render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer, global_step
+
+    '''
     def render_path(self):
-        if args.render_test:
-            render_poses = np.array(poses[i_test])
-
         # Move testing data to GPU
         render_poses = torch.Tensor(render_poses).to(device)
 
         # Short circuit if only rendering out from trained model
         if args.render_only:
             print('RENDER ONLY')
-
-            print('K', K)
     
             with torch.no_grad():
                 if args.render_test:
@@ -159,14 +165,16 @@ class Train():
                 os.makedirs(testsavedir, exist_ok=True)
                 print('test poses shape', render_poses.shape)
 
-
                 rgbs, _ = render_path(render_poses, hwf, K, args.chunk, render_kwargs_test, gt_imgs=images, savedir=testsavedir, render_factor=args.render_factor)
                 print('Done rendering', testsavedir)
                 imageio.mimwrite(os.path.join(testsavedir, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
 
                 return        
+    '''
 
-    def prepare_batches(self):
+    def batch_training_data(self, poses, hwf, K, images, i_train):
+        H, W, _ = hwf
+
         # Prepare raybatch tensor if batching random rays
         N_rand = args.N_rand
         use_batching = not args.no_batching
@@ -192,25 +200,12 @@ class Train():
         poses = torch.Tensor(poses).to(device)
         if use_batching:
             rays_rgb = torch.Tensor(rays_rgb).to(device)
-            
-def train():
 
-    parser = config_parser()
-    args = parser.parse_args()
+        return images, poses, rays_rgb, use_batching, N_rand, i_batch
 
-    N_iters = 200000 + 1
-    print('Begin')
-    print('TRAIN views are', i_train)
-    print('TEST views are', i_test)
-    print('VAL views are', i_val)
-
-    # Summary writers
-    # writer = SummaryWriter(os.path.join(basedir, 'summaries', expname))
-    
-    start = start + 1
-    for i in trange(start, N_iters):
-        time0 = time.time()
-
+    def sample_random_ray_batch(self, images, poses, rays_rgb, N_rand, use_batching, i_batch, i_train, hwf, K, start, i):
+        H, W, _ = hwf
+        
         # Sample random ray batch
         if use_batching:
             # Random over all images
@@ -256,38 +251,9 @@ def train():
                 batch_rays = torch.stack([rays_o, rays_d], 0)
                 target_s = target[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
 
-        #####  Core optimization loop  #####
-        rgb, disp, acc, extras = render(H, W, K, chunk=args.chunk, rays=batch_rays,
-                                                verbose=i < 10, retraw=True,
-                                                **render_kwargs_train)
+        return batch_rays, target_s, rays_rgb, i_batch
 
-        optimizer.zero_grad()
-        img_loss = img2mse(rgb, target_s)
-        trans = extras['raw'][...,-1]
-        loss = img_loss
-        psnr = mse2psnr(img_loss)
-
-        if 'rgb0' in extras:
-            img_loss0 = img2mse(extras['rgb0'], target_s)
-            loss = loss + img_loss0
-            psnr0 = mse2psnr(img_loss0)
-
-        loss.backward()
-        optimizer.step()
-
-        # NOTE: IMPORTANT!
-        ###   update learning rate   ###
-        decay_rate = 0.1
-        decay_steps = args.lrate_decay * 1000
-        new_lrate = args.lrate * (decay_rate ** (global_step / decay_steps))
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = new_lrate
-        ################################
-
-        dt = time.time()-time0
-        # print(f"Step: {global_step}, Loss: {loss}, Time: {dt}")
-        #####           end            #####
-
+    def logging(self, i, global_step):
         # Rest is logging
         if i%args.i_weights==0:
             path = os.path.join(basedir, expname, '{:06d}.tar'.format(i))
@@ -368,5 +334,3 @@ def train():
                         tf.contrib.summary.image('disp0', extras['disp0'][tf.newaxis,...,tf.newaxis])
                         tf.contrib.summary.image('z_std', extras['z_std'][tf.newaxis,...,tf.newaxis])
         """
-
-        global_step += 1

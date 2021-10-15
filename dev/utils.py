@@ -267,7 +267,7 @@ class NeRF(nn.Module):
         return outputs
 
     @typechecked
-    def density(self, points: TensorType["dims":..., 3], chunk=1024*64) -> TensorType["dims":...]:
+    def get_density(self, points: TensorType["dims":..., 3], chunk=1024*64) -> TensorType["dims":...]:
         view_dir = torch.ones_like(points)
         output = self.forward(points, view_dir, chunk)
         return output[..., -1]
