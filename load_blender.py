@@ -6,12 +6,12 @@ import json
 import torch.nn.functional as F
 import cv2
 
-'''
+
 trans_t = lambda t : torch.Tensor([
     [1,0,0,0],
     [0,1,0,0],
     [0,0,1,t],
-    [0,0,0,1]]).float()'''
+    [0,0,0,1]]).float()
 
 rot_phi = lambda phi : torch.Tensor([
     [1,0,0,0],
