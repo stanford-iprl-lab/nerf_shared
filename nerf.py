@@ -104,7 +104,7 @@ class CompositeNerf(Nerf):
         raise NotImplemented
 
     @typechecked
-    def forward(self, points: TensorType["dims":..., 3], view_direction: TensorType["dims":..., 3]) -> TensorType["dims":...,4]:
+    def forward(self, points: TensorType["dims":..., 3], view_direction: TensorType["dims":..., 3], fine_network = True) -> TensorType["dims":...,4]:
         raise NotImplemented
 
         for nerf, pose in zip(self.nerf_list, self.pose_list):
