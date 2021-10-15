@@ -46,6 +46,8 @@ def config_parser():
                         help='where to store ckpts and logs')
     parser.add_argument("--datadir", type=str, default='./data/llff/fern', 
                         help='input data directory')
+    parser.add_argument("--training", action='store_true', 
+                        help='training will begin by default. Set to false for custom functionality.')
 
     # training options
     parser.add_argument("--netdepth", type=int, default=8, 

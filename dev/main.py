@@ -21,7 +21,7 @@ def run():
 
     train_utils = Train(args)
 
-    if args.custom is False:
+    if args.training is True:
         images, poses, render_poses, hwf, i_split, K, bds_dict = train_utils.load_datasets()
 
         i_train, i_val, i_test = i_split
@@ -36,6 +36,7 @@ def run():
         # outputs rgb-density
         # coarse_nerf = render_kwargs_test['coarse_model']
         # fine_nerf = render_kwargs_test['fine_model']
+        # raw = coarse_nerf(points, views)      [N_rays, N_samples, 3], [N_rays, 3] -> [num_rays, num_samples along ray, 4]
 
         # Move testing data to GPU
         render_poses = torch.Tensor(render_poses).to(device)
