@@ -147,7 +147,6 @@ def config_parser():
     return parser
 
 ### Positional encoding Embedding Layer ###
-#TODO: Make Embedding Layer Learnable
 class Embedder:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
