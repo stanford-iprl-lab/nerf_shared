@@ -1,7 +1,6 @@
 import torch
 import os
 import numpy as np
-from tqdm import tqdm, trange
 
 from load_llff import load_llff_data
 from load_deepvoxels import load_dv_data
@@ -394,7 +393,7 @@ class Train():
         print('Saved test set')
 
     def print_statistics(self, loss, psnr, i):
-        tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
+        tqdm.tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
         """
             print(expname, i, psnr.numpy(), loss.numpy(), global_step.numpy())
             print('iter time {:.05f}'.format(dt))
