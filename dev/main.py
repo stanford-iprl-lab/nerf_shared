@@ -13,6 +13,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
 DEBUG = False
 
+from main_loop_utils import *
+from config_parser import *
 from utils import *
 
 def run():
@@ -87,7 +89,7 @@ def run():
 
             # Logging
             if i%args.i_weights==0:
-                train_utils.save_checkpoint(render_kwargs_train, optimizer, global_step)
+                train_utils.save_checkpoint(render_kwargs_train, optimizer, global_step, i)
 
             if i%args.i_video==0 and i > 0:
                 train_utils.render_training_video(render_poses, hwf, K, render_kwargs_test, i)

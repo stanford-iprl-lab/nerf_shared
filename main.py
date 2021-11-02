@@ -13,7 +13,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
 DEBUG = False
 
-from load_nerf import config_parser
+from main_loop_utils import *
+from config_parser import *
+from utils import *
+from render_utils import *
 
 def run():
     parser = config_parser()
@@ -21,7 +24,7 @@ def run():
 
     train_utils = Train(args)
 
-    if args.custom is False:
+    if args.training is True:
         images, poses, render_poses, hwf, i_split, K, bds_dict = train_utils.load_datasets()
 
         i_train, i_val, i_test = i_split
@@ -36,6 +39,7 @@ def run():
         # outputs rgb-density
         # coarse_nerf = render_kwargs_test['coarse_model']
         # fine_nerf = render_kwargs_test['fine_model']
+        # raw = coarse_nerf(points, views)      [N_rays, N_samples, 3], [N_rays, 3] -> [num_rays, num_samples along ray, 4]
 
         # Move testing data to GPU
         render_poses = torch.Tensor(render_poses).to(device)
@@ -86,7 +90,7 @@ def run():
 
             # Logging
             if i%args.i_weights==0:
-                train_utils.save_checkpoint(render_kwargs_train, optimizer, global_step)
+                train_utils.save_checkpoint(render_kwargs_train, optimizer, global_step, i)
 
             if i%args.i_video==0 and i > 0:
                 train_utils.render_training_video(render_poses, hwf, K, render_kwargs_test, i)
