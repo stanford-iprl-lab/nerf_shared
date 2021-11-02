@@ -1,10 +1,9 @@
-#TODO: Import only what's necessary
-from nerf_struct import *
-from utils import *
-
 import torch
 import numpy as np
 
+#TODO: Import only what's necessary
+from nerf_struct import *
+from utils import *
 
 def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
     """Render rays in smaller minibatches to avoid OOM.

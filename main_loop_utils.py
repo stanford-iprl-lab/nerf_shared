@@ -1,17 +1,17 @@
-#TODO: Import only what's necessary
-from nerf_struct import *
-from utils import *
-from render_utils import render_path
+import torch
+import os
+import numpy as np
+from tqdm import tqdm, trange
 
 from load_llff import load_llff_data
 from load_deepvoxels import load_dv_data
 from load_blender import load_blender_data
 from load_LINEMOD import load_LINEMOD_data
 
-import torch
-import os
-import numpy as np
-from tqdm import tqdm, trange
+#TODO: Import only what's necessary
+from nerf_struct import *
+from utils import *
+from render_utils import render_path
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

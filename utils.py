@@ -4,10 +4,8 @@ torch.autograd.set_detect_anomaly(True)
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-
 from torchtyping import TensorType
 from typeguard import typechecked
-
 import imageio
 import time
 import tqdm

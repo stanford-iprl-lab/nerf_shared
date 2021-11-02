@@ -1,9 +1,9 @@
-#TODO: Import only what's necessary
-from utils import *
-
 import torch
 import torch.nn as nn
 import numpy as np
+
+#TODO: Import only what's necessary
+from utils import *
 
 ### Positional encoding Embedding Layer ###
 #TODO: Make Embedding Layer Learnable

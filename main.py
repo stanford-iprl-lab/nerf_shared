@@ -1,22 +1,19 @@
 import numpy as np
 import time
 import torch
-
 from torchtyping import TensorDetail, TensorType
 from typeguard import typechecked
-
 from tqdm import tqdm, trange
 
 from utils import *
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-np.random.seed(0)
-DEBUG = False
-
 from main_loop_utils import *
 from config_parser import *
 from utils import *
 from render_utils import *
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+np.random.seed(0)
+DEBUG = False
 
 def run():
     parser = config_parser()
