@@ -10,4 +10,5 @@ opencv-python
 torchtyping
 typeguard
 scikit-image
-numpy-quaternion
+numpy
+json
