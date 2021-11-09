@@ -1,15 +1,10 @@
-import numpy as np
 import time
+import numpy as np
 import torch
-from torchtyping import TensorDetail, TensorType
-from typeguard import typechecked
 from tqdm import tqdm, trange
 
 from utils import *
-from main_loop_utils import *
 from config_parser import *
-from utils import *
-from render_utils import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
@@ -19,29 +14,33 @@ def run():
     parser = config_parser()
     args = parser.parse_args()
 
-    train_utils = Train(args)
-
     if args.training is True:
-        images, poses, render_poses, hwf, i_split, K, bds_dict = train_utils.load_datasets()
+        #Loads dataset info like images and Ground Truth poses and camera intrinsics
+        images, poses, render_poses, hwf, i_split, K, bds_dict = load_datasets(args)
 
+        # Train, val, test split
         i_train, i_val, i_test = i_split
 
+        # Resolution (H, W) and focal length
         H, W, focal = hwf
 
-        train_utils.copy_log_dir()
+        # Copy config file to log file
+        copy_log_dir(args)
 
-        render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer, global_step = train_utils.create_nerf_models()
+        # Creates Full NeRF model, optimizer and renderers either from scratch or from a loaded checkpoint
+        renderer_train, renderer_test, model, optimizer, start, _ = create_nerf_models(args, bds_dict)
 
-        # In render_kwargs_train and render_kwargs_test contains the coarse and fine models which take in pos, view direction and
-        # outputs rgb-density
-        # coarse_nerf = render_kwargs_test['coarse_model']
-        # fine_nerf = render_kwargs_test['fine_model']
-        # raw = coarse_nerf(points, views)      [N_rays, N_samples, 3], [N_rays, 3] -> [num_rays, num_samples along ray, 4]
+        # model contains attributes that are the coarse and fine instantiations of the single NeRF class
+        # call model.evaluate_coarse(...) or model.evaluate_fine(...) to map 3D points and 3D view directions
+        # to densities and radiance of the coarse and fine model, respectively.
+
+        global_step = start
 
         # Move testing data to GPU
         render_poses = torch.Tensor(render_poses).to(device)
 
-        images, poses, rays_rgb, use_batching, N_rand, i_batch = train_utils.batch_training_data(poses, hwf, K, images, i_train)
+        # Batch the training data
+        images, poses, rays_rgb, use_batching, N_rand, i_batch = batch_training_data(args, poses, hwf, K, images, i_train)
         
         N_iters = 200000 + 1
         print('Begin')
@@ -53,23 +52,37 @@ def run():
         for i in trange(start, N_iters):
             time0 = time.time()
 
-            batch_rays, target_s, rays_rgb, i_batch = train_utils.sample_random_ray_batch(images, poses, 
+            # Randomly select a batch of rays across images, or randomly sample from a single image per iteration
+            # determined by boolean use_batching
+            batch_rays, target_s, rays_rgb, i_batch = sample_random_ray_batch(args, images, poses, 
                                                     rays_rgb, N_rand, use_batching, i_batch, i_train, 
                                                     hwf, K, start, i)
 
             #####  Core optimization loop  #####
+            # Calls method of training renderer
+            rgb, _, _, extras = renderer_train.render_from_rays(H, W, K, chunk=args.chunk, rays=batch_rays,
+                                    model=model, retraw=True)
+
+            '''
             rgb, disp, acc, extras = render(H, W, K, chunk=args.chunk, rays=batch_rays,
                                                     verbose=i < 10, retraw=True,
                                                     **render_kwargs_train)
+            '''
 
             optimizer.zero_grad()
+
+            #Mean squared error between rendered ray RGB vs. Ground Truth RGB using the fine model
             img_loss = img2mse(rgb, target_s)
             trans = extras['raw'][...,-1]
             loss = img_loss
             psnr = mse2psnr(img_loss)
 
+            # If using both the coarse and fine model,
             if 'rgb0' in extras:
+                # MSE loss between rendered coarse model and GT RGB
                 img_loss0 = img2mse(extras['rgb0'], target_s)
+
+                #Add the coarse and fine reconstruction loss together
                 loss = loss + img_loss0
                 psnr0 = mse2psnr(img_loss0)
 
@@ -85,20 +98,26 @@ def run():
                 param_group['lr'] = new_lrate
             ################################
 
+            
             # Logging
+            # Periodically saves weights
             if i%args.i_weights==0:
-                train_utils.save_checkpoint(render_kwargs_train, optimizer, global_step, i)
-
+                save_checkpoints(args, model, optimizer, global_step, i)
+            '''
+            # Constructs a panoramic video of a camera within the NeRF scene
             if i%args.i_video==0 and i > 0:
-                train_utils.render_training_video(render_poses, hwf, K, render_kwargs_test, i)
+                render_training_video(args, render_poses, hwf, K, render_kwargs_test, i)
 
+            # Renders out the test poses to visually evaluate NeRF quality
             if i%args.i_testset==0 and i > 0:
-                train_utils.render_test_poses(images, poses, hwf, K, render_kwargs_test, i_split, i)
-
+                render_test_poses(args, images, poses, hwf, K, render_kwargs_test, i_split, i)
+            '''
+            #Displays loss and PSNR (Peak signal to noise ratio) of the fine reconstruction loss
             if i%args.i_print==0:
-                train_utils.print_statistics(loss, psnr, i)
-
+                print_statistics(args, loss, psnr, i)
+            
             global_step += 1
+            
     else:
         ### Define Custom Functionality Here
         pass

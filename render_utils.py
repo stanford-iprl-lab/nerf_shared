@@ -5,6 +5,26 @@ import numpy as np
 from nerf_struct import *
 from utils import *
 
+class Renderer:
+    def __init__(self, kwargs):
+
+        self.kwargs = kwargs
+
+    def render_from_pose(self, H, W, K, chunk, c2w, model, retraw=True):
+        rgb, disp, acc, extras = render(H, W, K, chunk=chunk, c2w=c2w,
+                  retraw=retraw, model=model, **self.kwargs)
+
+        return rgb, disp, acc, extras
+
+    def render_from_rays(self, H, W, K, chunk, rays, model, retraw=True):
+        rgb, disp, acc, extras = render(H, W, K, chunk=chunk, rays=rays,
+                  retraw=retraw, model=model, **self.kwargs)   
+
+        return rgb, disp, acc, extras 
+
+    def render_path(self):
+        pass
+
 def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
     """Render rays in smaller minibatches to avoid OOM.
     """
@@ -20,9 +40,8 @@ def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
     return all_ret
 
 def render_rays(ray_batch,
-                coarse_model,
+                model,
                 N_samples,
-                fine_model=None,
                 retraw=False,
                 lindisp=False,
                 perturb=0.,
@@ -92,7 +111,7 @@ def render_rays(ray_batch,
 
     pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
 
-    raw = coarse_model(pts, viewdirs)
+    raw = model.evaluate_coarse(pts, viewdirs)
     #raw = network_query_fn(pts, viewdirs, network_fn)
     rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
@@ -107,15 +126,10 @@ def render_rays(ray_batch,
         z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
         pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples + N_importance, 3]
 
-        '''
-        run_fn = network_fn if network_fine is None else network_fine
-
-        raw = network_query_fn(pts, viewdirs, run_fn)
-        '''
-        if fine_model is None:
-            raw = coarse_model(pts, viewdirs)
+        if model.fine is None:
+            raw = model.evaluate_coarse(pts, viewdirs)
         else:
-            raw = fine_model(pts, viewdirs)
+            raw = model.evaluate_fine(pts, viewdirs)
 
         rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
@@ -290,7 +304,6 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
             rgb8 = to8b(rgbs[-1])
             filename = os.path.join(savedir, '{:03d}.png'.format(i))
             imageio.imwrite(filename, rgb8)
-
 
     rgbs = np.stack(rgbs, 0)
     disps = np.stack(disps, 0)

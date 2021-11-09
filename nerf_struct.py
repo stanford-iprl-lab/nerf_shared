@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from torchtyping import TensorType
+from typeguard import typechecked
 import numpy as np
 
 #TODO: Import only what's necessary
-from utils import *
 
 ### Positional encoding Embedding Layer ###
 #TODO: Make Embedding Layer Learnable
@@ -56,6 +58,34 @@ def get_embedder(multires, i=0):
     embed = lambda x, eo=embedder_obj : eo.embed(x)
     return embed, embedder_obj.out_dim
 
+class NeRFCoarseAndFine(nn.Module):
+    def __init__(self, coarse_model, fine_model):
+        """ 
+        """
+        super(NeRF, self).__init__()
+        self.coarse = coarse_model
+        self.fine = fine_model
+
+    '''
+    def forward(self, inputs, viewdirs, netchunk=1024*64):
+        raw = self.coarse(inputs, viewdirs, netchunk=netchunk)
+
+        z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
+        z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.), pytest=pytest)
+        z_samples = z_samples.detach()
+
+        z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
+        pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples + N_importance, 3]
+
+        raw = fine_model(pts, viewdirs)
+    '''
+
+    def evaluate_coarse(self, inputs, viewdirs, netchunk=1024*64):
+        return self.coarse(inputs, viewdirs, netchunk=netchunk)
+
+    def evaluate_fine(self, inputs, viewdirs, netchunk=1024*64):
+        return self.fine(inputs, viewdirs, netchunk=netchunk)
+
 # Model
 class NeRF(nn.Module):
     def __init__(self, D=8, W=256, output_ch=4, skips=[4], use_viewdirs=False, multires=10, multires_views=4, i_embed=0):
@@ -92,7 +122,7 @@ class NeRF(nn.Module):
         else:
             self.output_linear = nn.Linear(W, output_ch)
 
-    def forward(self, inputs, viewdirs=True, netchunk=1024*64):
+    def forward(self, inputs, viewdirs, netchunk=1024*64):
         inputs_flat = torch.reshape(inputs, [-1, inputs.shape[-1]])
         #print('inputs', inputs_flat.shape)
         embedded = self.embed_fn(inputs_flat)
