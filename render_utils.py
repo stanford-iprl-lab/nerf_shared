@@ -1,30 +1,35 @@
 import torch
 import numpy as np
 
-#TODO: Import only what's necessary
+# TODO(pculbert): Refactor to import just the module.
 from nerf_struct import *
 from utils import *
+import utils
+
+DEBUG = False
 
 class Renderer:
     def __init__(self, kwargs):
 
         self.kwargs = kwargs
 
-    def render_from_pose(self, H, W, K, chunk, c2w, model, retraw=True):
-        rgb, disp, acc, extras = render(H, W, K, chunk=chunk, c2w=c2w,
-                  retraw=retraw, model=model, **self.kwargs)
+    def render_from_pose(self, H, W, K, chunk, c2w, coarse_model,
+                         fine_model, retraw=True):
+        rgb, disp, acc, extras = render(
+            H, W, K, chunk=chunk, c2w=c2w, retraw=retraw, **self.kwargs)
 
         return rgb, disp, acc, extras
 
-    def render_from_rays(self, H, W, K, chunk, rays, model, retraw=True):
+    def render_from_rays(self, H, W, K, chunk, rays, coarse_model, fine_model, retraw=True):
         rgb, disp, acc, extras = render(H, W, K, chunk=chunk, rays=rays,
-                  retraw=retraw, model=model, **self.kwargs)   
+                  retraw=retraw, **self.kwargs)
 
-        return rgb, disp, acc, extras 
+        return rgb, disp, acc, extras
 
     def render_path(self):
         pass
 
+# TODO(pculbert): refactor these functions into class methods.
 def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
     """Render rays in smaller minibatches to avoid OOM.
     """
@@ -40,7 +45,8 @@ def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
     return all_ret
 
 def render_rays(ray_batch,
-                model,
+                coarse_model,
+                fine_model,
                 N_samples,
                 retraw=False,
                 lindisp=False,
@@ -111,7 +117,7 @@ def render_rays(ray_batch,
 
     pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
 
-    raw = model.evaluate_coarse(pts, viewdirs)
+    raw = coarse_model(pts, viewdirs)
     #raw = network_query_fn(pts, viewdirs, network_fn)
     rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
@@ -120,16 +126,16 @@ def render_rays(ray_batch,
         rgb_map_0, disp_map_0, acc_map_0 = rgb_map, disp_map, acc_map
 
         z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
-        z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.), pytest=pytest)
+        z_samples = utils.sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.), pytest=pytest)
         z_samples = z_samples.detach()
 
         z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
         pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples + N_importance, 3]
 
-        if model.fine is None:
-            raw = model.evaluate_coarse(pts, viewdirs)
+        if fine_model is None:
+            raw = coarse_model(pts, viewdirs)
         else:
-            raw = model.evaluate_fine(pts, viewdirs)
+            raw = fine_model(pts, viewdirs)
 
         rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
@@ -166,7 +172,7 @@ def render(H, W, K, chunk=1024*32, rays=None, c2w=None, ndc=True,
       near: float or array of shape [batch_size]. Nearest distance for a ray.
       far: float or array of shape [batch_size]. Farthest distance for a ray.
       use_viewdirs: bool. If True, use viewing direction of a point in space in model.
-      c2w_staticcam: array of shape [3, 4]. If not None, use this transformation matrix for 
+      c2w_staticcam: array of shape [3, 4]. If not None, use this transformation matrix for
        camera while using other c2w argument for viewing directions.
     Returns:
       rgb_map: [batch_size, 3]. Predicted RGB values for rays.
