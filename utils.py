@@ -168,6 +168,9 @@ def get_renderers(coarse_model, fine_model, args, bds_dict):
     render_kwargs_test['perturb'] = False
     render_kwargs_test['raw_noise_std'] = 0.
 
+    render_kwargs_train.update(bds_dict)
+    render_kwargs_test.update(bds_dict)
+
     train_renderer = render_utils.Renderer(render_kwargs_train)
     test_renderer = render_utils.Renderer(render_kwargs_test)
 
