@@ -11,4 +11,3 @@ torchtyping
 typeguard
 scikit-image
 numpy
-json
