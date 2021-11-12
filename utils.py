@@ -1,25 +1,20 @@
-import os
-import torch
-torch.autograd.set_detect_anomaly(True)
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
-import render_utils
-from torchtyping import TensorType
-from typeguard import typechecked
 import imageio
+import load_blender
+import load_deepvoxels
+import load_LINEMOD
+import load_llff
+import nerf
+import numpy as np
+import os
+import render_utils
 import time
+import torch
 import tqdm
 
-# TODO(pculbert): Refactor to import just module.
-from load_llff import load_llff_data
-from load_deepvoxels import load_dv_data
-from load_blender import load_blender_data
-from load_LINEMOD import load_LINEMOD_data
+import torch.nn as nn
+import torch.nn.functional as F
 
-#TODO: Make sure to import only what's necessary
-from nerf_struct import NeRF, NeRFCoarseAndFine
-from render_utils import Renderer
+torch.autograd.set_detect_anomaly(True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
@@ -129,7 +124,7 @@ def create_nerf_models(args):
 
     output_ch = 5 if args.N_importance > 0 else 4
     skips = [4]
-    coarse_model = NeRF(D=args.netdepth, W=args.netwidth,
+    coarse_model = nerf.NeRF(D=args.netdepth, W=args.netwidth,
                  output_ch=output_ch, skips=skips,
                  use_viewdirs=args.use_viewdirs,
                  multires=args.multires, multires_views=args.multires_views,
@@ -137,7 +132,7 @@ def create_nerf_models(args):
 
     fine_model = None
     if args.N_importance > 0:
-        fine_model = NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
+        fine_model = nerf.NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
                           output_ch=output_ch, skips=skips,
                           use_viewdirs=args.use_viewdirs,
                           multires=args.multires, multires_views=args.multires_views,
@@ -218,9 +213,10 @@ def load_datasets(args):
     # Load data
     K = None
     if args.dataset_type == 'llff':
-        images, poses, bds, render_poses, i_test = load_llff_data(args.datadir, args.factor,
-                                                                recenter=True, bd_factor=.75,
-                                                                spherify=args.spherify)
+        images, poses, bds, render_poses, i_test = load_llff.load_llff_data(
+            args.datadir, args.factor, recenter=True,
+            bd_factor=.75, spherify=args.spherify)
+
         hwf = poses[0,:3,-1]
         poses = poses[:,:3,:4]
         print('Loaded llff', images.shape, render_poses.shape, hwf, args.datadir)
@@ -246,7 +242,9 @@ def load_datasets(args):
         print('NEAR FAR', near, far)
 
     elif args.dataset_type == 'blender':
-        images, poses, render_poses, hwf, i_split = load_blender_data(args.datadir, args.half_res, args.testskip)
+        images, poses, render_poses, hwf, i_split = load_blender.load_blender_data(
+            args.datadir, args.half_res, args.testskip)
+
         print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
         i_train, i_val, i_test = i_split
 
@@ -259,7 +257,11 @@ def load_datasets(args):
             images = images[...,:3]
 
     elif args.dataset_type == 'LINEMOD':
-        images, poses, render_poses, hwf, K, i_split, near, far = load_LINEMOD_data(args.datadir, args.half_res, args.testskip)
+        linemod_data = load_LINEMOD.load_LINEMOD_data(args.datadir,
+                                                      args.half_res, args.testskip)
+
+        images, poses, render_poses, hwf, K, i_split, near, far = linemod_data
+
         print(f'Loaded LINEMOD, images shape: {images.shape}, hwf: {hwf}, K: {K}')
         print(f'[CHECK HERE] near: {near}, far: {far}.')
         i_train, i_val, i_test = i_split
@@ -271,9 +273,8 @@ def load_datasets(args):
 
     elif args.dataset_type == 'deepvoxels':
 
-        images, poses, render_poses, hwf, i_split = load_dv_data(scene=args.shape,
-                                                                basedir=args.datadir,
-                                                                testskip=args.testskip)
+        images, poses, render_poses, hwf, i_split = load_deepvoxels.load_dv_data(
+            scene=args.shape, basedir=args.datadir, testskip=args.testskip)
 
         print('Loaded deepvoxels', images.shape, render_poses.shape, hwf, args.datadir)
         i_train, i_val, i_test = i_split

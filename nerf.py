@@ -1,16 +1,13 @@
+import numpy as np
 import torch
+import torchtyping
+import typeguard
+
 import torch.nn as nn
 import torch.nn.functional as F
 
-# TODO(pculbert): Refactor to import just module.
-from torchtyping import TensorType
-from typeguard import typechecked
-import numpy as np
-
-#TODO: Import only what's necessary
-
 ### Positional encoding Embedding Layer ###
-#TODO: Make Embedding Layer Learnable
+#TODO(pculbert): Make Embedding Layer Learnable
 class Embedder:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -59,20 +56,6 @@ def get_embedder(multires, i=0):
     embedder_obj = Embedder(**embed_kwargs)
     embed = lambda x, eo=embedder_obj : eo.embed(x)
     return embed, embedder_obj.out_dim
-
-class NeRFCoarseAndFine(nn.Module):
-    def __init__(self, coarse_model, fine_model):
-        """
-        """
-        super(NeRF, self).__init__()
-        self.coarse = coarse_model
-        self.fine = fine_model
-
-    def evaluate_coarse(self, inputs, viewdirs, netchunk=1024*64):
-        return self.coarse(inputs, viewdirs, netchunk=netchunk)
-
-    def evaluate_fine(self, inputs, viewdirs, netchunk=1024*64):
-        return self.fine(inputs, viewdirs, netchunk=netchunk)
 
 # Model
 class NeRF(nn.Module):
@@ -152,8 +135,11 @@ class NeRF(nn.Module):
 
         return outputs
 
-    @typechecked
-    def get_density(self, points: TensorType["dims":..., 3], chunk=1024*64) -> TensorType["dims":...]:
+    @typeguard.typechecked
+    def get_density(self,
+                    points: torchtyping.TensorType["dims":..., 3],
+                    chunk=1024*64) -> torchtyping.TensorType["dims":...]:
+
         view_dir = torch.ones_like(points)
         output = self.forward(points, view_dir, chunk)
         return output[..., -1]

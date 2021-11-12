@@ -1,10 +1,9 @@
-import torch
+import nerf
 import numpy as np
-
-# TODO(pculbert): Refactor to import just the module.
-from nerf_struct import *
-from utils import *
+import torch
 import utils
+
+import torch.nn.functional as F
 
 DEBUG = False
 
@@ -187,7 +186,7 @@ class Renderer(torch.nn.Module):
         """
         if c2w is not None:
             # special case to render full image
-            rays_o, rays_d = get_rays(H, W, K, c2w)
+            rays_o, rays_d = utils.get_rays(H, W, K, c2w)
         else:
             # use provided ray batch
             rays_o, rays_d = rays
@@ -197,14 +196,14 @@ class Renderer(torch.nn.Module):
             viewdirs = rays_d
             if c2w_staticcam is not None:
                 # special case to visualize effect of viewdirs
-                rays_o, rays_d = get_rays(H, W, K, c2w_staticcam)
+                rays_o, rays_d = utils.get_rays(H, W, K, c2w_staticcam)
             viewdirs = viewdirs / torch.norm(viewdirs, dim=-1, keepdim=True)
             viewdirs = torch.reshape(viewdirs, [-1,3]).float()
 
         sh = rays_d.shape # [..., 3]
         if self.ndc:
             # for forward facing scenes
-            rays_o, rays_d = ndc_rays(H, W, K[0][0], 1., rays_o, rays_d)
+            rays_o, rays_d = utils.ndc_rays(H, W, K[0][0], 1., rays_o, rays_d)
 
         # Create ray batch
         rays_o = torch.reshape(rays_o, [-1,3]).float()
