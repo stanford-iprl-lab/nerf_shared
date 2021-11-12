@@ -200,12 +200,14 @@ def load_checkpoint(coarse_model, fine_model, optimizer, args):
         # Load model
         coarse_model.load_state_dict(ckpt['coarse_model_state_dict'], strict=False)
         for param in coarse_model.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
+            # param.requires_grad = False
 
         if fine_model is not None:
             fine_model.load_state_dict(ckpt['fine_model_state_dict'])
             for param in fine_model.parameters():
-                param.requires_grad = False
+                param.requires_grad = True
+                # param.requires_grad = False
 
     return start
 

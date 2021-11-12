@@ -1,5 +1,6 @@
 import config_parser
 import numpy as np
+import os
 import time
 import torch
 import tqdm
@@ -112,11 +113,20 @@ def run():
             # Constructs a panoramic video of a camera within the NeRF scene
             if i%args.i_video==0 and i > 0:
                 utils.render_training_video(args, render_poses, hwf, K, render_kwargs_test, i)
-
-            # Renders out the test poses to visually evaluate NeRF quality
-            if i%args.i_testset==0 and i > 0:
-                utils.render_test_poses(args, images, poses, hwf, K, render_kwargs_test, i_split, i)
             '''
+            # Renders out the test poses (i.e. poses[i_test]) to visually evaluate NeRF quality 
+            if i%args.i_testset==0 and i > 0:
+                renderer.render_from_batch_poses(H, 
+                                                 W, 
+                                                 K, 
+                                                 chunk=args.chunk, 
+                                                 batch_c2w=poses[i_test], 
+                                                 coarse_model=coarse_model, 
+                                                 fine_model=fine_model, 
+                                                 retraw=True, 
+                                                 save_directory=os.path.join(args.basedir, args.expname, 'testset_{:06d}'.format(i)),
+                                                 b_combine_as_video=True)
+            
             #Displays loss and PSNR (Peak signal to noise ratio) of the fine reconstruction loss
             if i%args.i_print==0:
                 utils.print_statistics(args, loss, psnr, i)

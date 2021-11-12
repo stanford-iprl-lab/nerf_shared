@@ -1,9 +1,14 @@
+import imageio
 import nerf
 import numpy as np
+import os
 import torch
 import utils
 
 import torch.nn.functional as F
+
+#Converts an image's pixels values from [0, 1] to [0, 255]
+to8b = lambda x : (255*np.clip(x,0,1)).astype(np.uint8)
 
 DEBUG = False
 
@@ -276,6 +281,29 @@ class Renderer(torch.nn.Module):
 
         return rgb_map, disp_map, acc_map, weights, depth_map
 
+
+    def render_from_batch_poses(self, H, W, K, chunk, batch_c2w, coarse_model, fine_model, retraw, save_directory, b_combine_as_video=False):
+        '''
+        take in a set of poses, render them as images, and save them
+        '''
+        os.makedirs(save_directory, exist_ok=True)
+        rgbs = []
+        with torch.no_grad():
+            for i, c2w in enumerate(batch_c2w):
+                rgb, _, _, _ = self.render_from_pose(H,
+                                                     W,
+                                                     K,
+                                                     chunk=chunk,
+                                                     c2w=c2w,
+                                                     coarse_model=coarse_model,
+                                                     fine_model=fine_model,
+                                                     retraw=retraw)
+                rgbs.append(rgb.cpu().numpy())
+                rgb8 = to8b(rgbs[-1])
+                filename = os.path.join(save_directory, '{:03d}.png'.format(i))
+                imageio.imwrite(filename, rgb8)
+            if b_combine_as_video:
+                imageio.mimwrite(os.path.join(save_directory, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
 
 # def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=0):
 

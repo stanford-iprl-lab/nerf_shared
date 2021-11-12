@@ -1,4 +1,4 @@
-expname = teddy_bear_test
+expname = teddy_bear
 basedir = ./logs
 datadir = ./data/nerf_synthetic/teddy_bear
 dataset_type = blender
@@ -21,3 +21,6 @@ half_res = True
 i_testset = 10000
 
 i_video = 200000
+
+training = True
+testskip = 1
