@@ -1,22 +1,21 @@
-import time
+import config_parser
 import numpy as np
+import time
 import torch
-from tqdm import tqdm, trange
-
-from utils import *
-from config_parser import *
+import tqdm
+import utils
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
 DEBUG = False
 
 def run():
-    parser = config_parser()
+    parser = config_parser.config_parser()
     args = parser.parse_args()
 
     if args.training is True:
         #Loads dataset info like images and Ground Truth poses and camera intrinsics
-        images, poses, render_poses, hwf, i_split, K, bds_dict = load_datasets(args)
+        images, poses, render_poses, hwf, i_split, K, bds_dict = utils.load_datasets(args)
 
         # Train, val, test split
         i_train, i_val, i_test = i_split
@@ -25,14 +24,18 @@ def run():
         H, W, focal = hwf
 
         # Copy config file to log file
-        copy_log_dir(args)
+        utils.copy_log_dir(args)
 
-        # Creates Full NeRF model, optimizer and renderers either from scratch or from a loaded checkpoint
-        renderer_train, renderer_test, model, optimizer, start, _ = create_nerf_models(args, bds_dict)
+        # Create coarse/fine NeRF models.
+        coarse_model, fine_model = utils.create_nerf_models(args)
 
-        # model contains attributes that are the coarse and fine instantiations of the single NeRF class
-        # call model.evaluate_coarse(...) or model.evaluate_fine(...) to map 3D points and 3D view directions
-        # to densities and radiance of the coarse and fine model, respectively.
+        # Create optimizer for trainable params.
+        optimizer = utils.get_optimizer(coarse_model, fine_model, args)
+
+        # Load any available checkpoints.
+        start = utils.load_checkpoint(coarse_model, fine_model, optimizer, args)
+
+        renderer = utils.get_renderer(args, bds_dict)
 
         global_step = start
 
@@ -40,8 +43,8 @@ def run():
         render_poses = torch.Tensor(render_poses).to(device)
 
         # Batch the training data
-        images, poses, rays_rgb, use_batching, N_rand, i_batch = batch_training_data(args, poses, hwf, K, images, i_train)
-        
+        images, poses, rays_rgb, use_batching, N_rand, i_batch = utils.batch_training_data(args, poses, hwf, K, images, i_train)
+
         N_iters = 200000 + 1
         print('Begin')
         print('TRAIN views are', i_train)
@@ -49,43 +52,45 @@ def run():
         print('VAL views are', i_val)
 
         start = start + 1
-        for i in trange(start, N_iters):
+        for i in tqdm.trange(start, N_iters):
+            renderer.train()
             time0 = time.time()
 
             # Randomly select a batch of rays across images, or randomly sample from a single image per iteration
             # determined by boolean use_batching
-            batch_rays, target_s, rays_rgb, i_batch = sample_random_ray_batch(args, images, poses, 
-                                                    rays_rgb, N_rand, use_batching, i_batch, i_train, 
+            batch_rays, target_s, rays_rgb, i_batch = utils.sample_random_ray_batch(args, images, poses,
+                                                    rays_rgb, N_rand, use_batching, i_batch, i_train,
                                                     hwf, K, start, i)
 
             #####  Core optimization loop  #####
-            # Calls method of training renderer
-            rgb, _, _, extras = renderer_train.render_from_rays(H, W, K, chunk=args.chunk, rays=batch_rays,
-                                    model=model, retraw=True)
-
-            '''
-            rgb, disp, acc, extras = render(H, W, K, chunk=args.chunk, rays=batch_rays,
-                                                    verbose=i < 10, retraw=True,
-                                                    **render_kwargs_train)
-            '''
+            rgb, _, _, extras = renderer.render_from_rays(H,
+                                                          W,
+                                                          K,
+                                                          chunk=args.chunk,
+                                                          rays=batch_rays,
+                                                          coarse_model=coarse_model,
+                                                          fine_model=fine_model,
+                                                          retraw=True)
 
             optimizer.zero_grad()
 
             #Mean squared error between rendered ray RGB vs. Ground Truth RGB using the fine model
-            img_loss = img2mse(rgb, target_s)
+            img_loss = utils.img2mse(rgb, target_s)
             trans = extras['raw'][...,-1]
             loss = img_loss
-            psnr = mse2psnr(img_loss)
+            psnr = utils.mse2psnr(img_loss)
 
             # If using both the coarse and fine model,
             if 'rgb0' in extras:
                 # MSE loss between rendered coarse model and GT RGB
-                img_loss0 = img2mse(extras['rgb0'], target_s)
+                img_loss0 = utils.img2mse(extras['rgb0'], target_s)
 
                 #Add the coarse and fine reconstruction loss together
                 loss = loss + img_loss0
-                psnr0 = mse2psnr(img_loss0)
+                psnr0 = utils.mse2psnr(img_loss0)
 
+            # TODO(pculbert, chengine): Debug optimization; performance does not match
+            # original implementation.
             loss.backward()
             optimizer.step()
 
@@ -98,26 +103,26 @@ def run():
                 param_group['lr'] = new_lrate
             ################################
 
-            
+
             # Logging
             # Periodically saves weights
             if i%args.i_weights==0:
-                save_checkpoints(args, model, optimizer, global_step, i)
+                utils.save_checkpoints(args, coarse_model, fine_model, optimizer, global_step, i)
             '''
             # Constructs a panoramic video of a camera within the NeRF scene
             if i%args.i_video==0 and i > 0:
-                render_training_video(args, render_poses, hwf, K, render_kwargs_test, i)
+                utils.render_training_video(args, render_poses, hwf, K, render_kwargs_test, i)
 
             # Renders out the test poses to visually evaluate NeRF quality
             if i%args.i_testset==0 and i > 0:
-                render_test_poses(args, images, poses, hwf, K, render_kwargs_test, i_split, i)
+                utils.render_test_poses(args, images, poses, hwf, K, render_kwargs_test, i_split, i)
             '''
             #Displays loss and PSNR (Peak signal to noise ratio) of the fine reconstruction loss
             if i%args.i_print==0:
-                print_statistics(args, loss, psnr, i)
-            
+                utils.print_statistics(args, loss, psnr, i)
+
             global_step += 1
-            
+
     else:
         ### Define Custom Functionality Here
         pass

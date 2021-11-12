@@ -1,23 +1,20 @@
-import os
-import torch
-torch.autograd.set_detect_anomaly(True)
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
-from torchtyping import TensorType
-from typeguard import typechecked
 import imageio
+import load_blender
+import load_deepvoxels
+import load_LINEMOD
+import load_llff
+import nerf
+import numpy as np
+import os
+import render_utils
 import time
+import torch
 import tqdm
 
-from load_llff import load_llff_data
-from load_deepvoxels import load_dv_data
-from load_blender import load_blender_data
-from load_LINEMOD import load_LINEMOD_data
+import torch.nn as nn
+import torch.nn.functional as F
 
-#TODO: Make sure to import only what's necessary
-from nerf_struct import NeRF, NeRFCoarseAndFine
-from render_utils import Renderer
+torch.autograd.set_detect_anomaly(True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
@@ -60,7 +57,7 @@ def ndc_rays(H, W, focal, near, rays_o, rays_d):
     # Shift ray origins to near plane
     t = -(near + rays_o[...,2]) / rays_d[...,2]
     rays_o = rays_o + t[...,None] * rays_d
-    
+
     # Projection
     o0 = -1./(W/(2.*focal)) * rays_o[...,0] / rays_o[...,2]
     o1 = -1./(H/(2.*focal)) * rays_o[...,1] / rays_o[...,2]
@@ -69,10 +66,10 @@ def ndc_rays(H, W, focal, near, rays_o, rays_d):
     d0 = -1./(W/(2.*focal)) * (rays_d[...,0]/rays_d[...,2] - rays_o[...,0]/rays_o[...,2])
     d1 = -1./(H/(2.*focal)) * (rays_d[...,1]/rays_d[...,2] - rays_o[...,1]/rays_o[...,2])
     d2 = -2. * near / rays_o[...,2]
-    
+
     rays_o = torch.stack([o0,o1,o2], -1)
     rays_d = torch.stack([d0,d1,d2], -1)
-    
+
     return rays_o, rays_d
 
 # Hierarchical sampling (section 5.2)
@@ -121,46 +118,76 @@ def sample_pdf(bins, weights, N_samples, det=False, pytest=False):
 
     return samples
 
-def create_nerf(args):
+def create_nerf_models(args):
     """Instantiate NeRF.
     """
 
     output_ch = 5 if args.N_importance > 0 else 4
     skips = [4]
-    model = NeRF(D=args.netdepth, W=args.netwidth,
+    coarse_model = nerf.NeRF(D=args.netdepth, W=args.netwidth,
                  output_ch=output_ch, skips=skips,
                  use_viewdirs=args.use_viewdirs,
                  multires=args.multires, multires_views=args.multires_views,
                  i_embed=args.i_embed).to(device)
-    grad_vars = list(model.parameters())
 
-    model_fine = None
+    fine_model = None
     if args.N_importance > 0:
-        model_fine = NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
+        fine_model = nerf.NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
                           output_ch=output_ch, skips=skips,
                           use_viewdirs=args.use_viewdirs,
                           multires=args.multires, multires_views=args.multires_views,
                           i_embed=args.i_embed).to(device)
-        grad_vars += list(model_fine.parameters())
-    
+
+    return coarse_model, fine_model
+
+def get_renderer(args, bds_dict):
+
+    render_kwargs = {
+        'perturb' : args.perturb,
+        'N_importance' : args.N_importance,
+        'N_samples' : args.N_samples,
+        'use_viewdirs' : args.use_viewdirs,
+        'white_bkgd' : args.white_bkgd,
+        'raw_noise_std' : args.raw_noise_std,
+    }
+
+    # NDC only good for LLFF-style forward facing data
+    if args.dataset_type != 'llff' or args.no_ndc:
+        print('Not ndc!')
+        render_kwargs['ndc'] = False
+        render_kwargs['lindisp'] = args.lindisp
+
+    render_kwargs.update(bds_dict)
+
+    return render_utils.Renderer(**render_kwargs)
+
+def get_optimizer(coarse_model, fine_model, args):
+    grad_vars = list(coarse_model.parameters())
+
+    if fine_model:
+        grad_vars += list(fine_model.parameters())
+
     # Create optimizer
     optimizer = torch.optim.Adam(params=grad_vars, lr=args.lrate, betas=(0.9, 0.999))
 
+    return optimizer
+
+def load_checkpoint(coarse_model, fine_model, optimizer, args):
     start = 0
     basedir = args.basedir
     expname = args.expname
-
-    ##########################
 
     # Load checkpoints
     if args.ft_path is not None and args.ft_path!='None':
         ckpts = [args.ft_path]
     else:
-        ckpts = [os.path.join(basedir, expname, f) for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
+        ckpts = [os.path.join(basedir, expname, f) for f in sorted(os.listdir(
+            os.path.join(basedir, expname))) if 'tar' in f]
 
     print('Found ckpts', ckpts)
 
-    ### BE CAREFUL HERE!!! IF YOU ARE LOADING FROM A CHECKPOINT, YOU NEED TO CHANGE param.requires_grad to True
+    ### BE CAREFUL HERE!!! IF YOU ARE LOADING FROM A CHECKPOINT,
+    ### YOU NEED TO CHANGE param.requires_grad to True
     ### IF YOU PLAN ON CONTINUING TRAINING
     if len(ckpts) > 0 and not args.no_reload:
         ckpt_path = ckpts[-1]
@@ -171,50 +198,25 @@ def create_nerf(args):
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
 
         # Load model
-        model.load_state_dict(ckpt['model_state_dict'], strict=False)
-        for param in model.parameters():
+        coarse_model.load_state_dict(ckpt['coarse_model_state_dict'], strict=False)
+        for param in coarse_model.parameters():
             param.requires_grad = False
-        
-        if model_fine is not None:
-            model_fine.load_state_dict(ckpt['fine_model_state_dict'])
-            for param in model_fine.parameters():
+
+        if fine_model is not None:
+            fine_model.load_state_dict(ckpt['fine_model_state_dict'])
+            for param in fine_model.parameters():
                 param.requires_grad = False
-        
-    ##########################
 
-    render_kwargs_train = {
-        'perturb' : args.perturb,
-        'N_importance' : args.N_importance,
-        'N_samples' : args.N_samples,
-        'use_viewdirs' : args.use_viewdirs,
-        'white_bkgd' : args.white_bkgd,
-        'raw_noise_std' : args.raw_noise_std,
-        'coarse_model' : model,
-        'fine_model' : model_fine
-    }
-
-    # NDC only good for LLFF-style forward facing data
-    if args.dataset_type != 'llff' or args.no_ndc:
-        print('Not ndc!')
-        render_kwargs_train['ndc'] = False
-        render_kwargs_train['lindisp'] = args.lindisp
-
-    render_kwargs_test = {k : render_kwargs_train[k] for k in render_kwargs_train}
-    render_kwargs_test['perturb'] = False
-    render_kwargs_test['raw_noise_std'] = 0.
-
-
-    full_model = NeRFCoarseAndFine(model, model_fine)
-
-    return render_kwargs_train, render_kwargs_test, full_model, start, grad_vars, optimizer
+    return start
 
 def load_datasets(args):
     # Load data
     K = None
     if args.dataset_type == 'llff':
-        images, poses, bds, render_poses, i_test = load_llff_data(args.datadir, args.factor,
-                                                                recenter=True, bd_factor=.75,
-                                                                spherify=args.spherify)
+        images, poses, bds, render_poses, i_test = load_llff.load_llff_data(
+            args.datadir, args.factor, recenter=True,
+            bd_factor=.75, spherify=args.spherify)
+
         hwf = poses[0,:3,-1]
         poses = poses[:,:3,:4]
         print('Loaded llff', images.shape, render_poses.shape, hwf, args.datadir)
@@ -233,14 +235,16 @@ def load_datasets(args):
         if args.no_ndc:
             near = np.ndarray.min(bds) * .9
             far = np.ndarray.max(bds) * 1.
-            
+
         else:
             near = 0.
             far = 1.
         print('NEAR FAR', near, far)
 
     elif args.dataset_type == 'blender':
-        images, poses, render_poses, hwf, i_split = load_blender_data(args.datadir, args.half_res, args.testskip)
+        images, poses, render_poses, hwf, i_split = load_blender.load_blender_data(
+            args.datadir, args.half_res, args.testskip)
+
         print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
         i_train, i_val, i_test = i_split
 
@@ -253,7 +257,11 @@ def load_datasets(args):
             images = images[...,:3]
 
     elif args.dataset_type == 'LINEMOD':
-        images, poses, render_poses, hwf, K, i_split, near, far = load_LINEMOD_data(args.datadir, args.half_res, args.testskip)
+        linemod_data = load_LINEMOD.load_LINEMOD_data(args.datadir,
+                                                      args.half_res, args.testskip)
+
+        images, poses, render_poses, hwf, K, i_split, near, far = linemod_data
+
         print(f'Loaded LINEMOD, images shape: {images.shape}, hwf: {hwf}, K: {K}')
         print(f'[CHECK HERE] near: {near}, far: {far}.')
         i_train, i_val, i_test = i_split
@@ -265,9 +273,8 @@ def load_datasets(args):
 
     elif args.dataset_type == 'deepvoxels':
 
-        images, poses, render_poses, hwf, i_split = load_dv_data(scene=args.shape,
-                                                                basedir=args.datadir,
-                                                                testskip=args.testskip)
+        images, poses, render_poses, hwf, i_split = load_deepvoxels.load_dv_data(
+            scene=args.shape, basedir=args.datadir, testskip=args.testskip)
 
         print('Loaded deepvoxels', images.shape, render_poses.shape, hwf, args.datadir)
         i_train, i_val, i_test = i_split
@@ -279,7 +286,7 @@ def load_datasets(args):
     else:
         print('Unknown dataset type', args.dataset_type, 'exiting')
         return
-    
+
     # Cast intrinsics to right types
     H, W, focal = hwf
     H, W = int(H), int(W)
@@ -291,7 +298,7 @@ def load_datasets(args):
             [0, focal, 0.5*H],
             [0, 0, 1]
         ])
-    
+
     bds_dict = {
     'near' : near,
     'far' : far,
@@ -318,19 +325,6 @@ def copy_log_dir(args):
         f = os.path.join(basedir, expname, 'config.txt')
         with open(f, 'w') as file:
             file.write(open(args.config, 'r').read())
-
-def create_nerf_models(args, bds_dict):
-    # Create nerf model
-    render_kwargs_train, render_kwargs_test, model, start, grad_vars, optimizer = create_nerf(args)
-    global_step = start
-
-    render_kwargs_train.update(bds_dict)
-    render_kwargs_test.update(bds_dict)
-
-    renderer_train = Renderer(render_kwargs_train)
-    renderer_test = Renderer(render_kwargs_test)
-
-    return renderer_train, renderer_test, model, optimizer, start, grad_vars
 
 def render_path(args, render_poses, images, hwf, K, i_split, start, render_kwargs_test):
     i_train, i_val, i_test = i_split
@@ -360,7 +354,7 @@ def render_path(args, render_poses, images, hwf, K, i_split, start, render_kwarg
             print('Done rendering', testsavedir)
             imageio.mimwrite(os.path.join(testsavedir, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
 
-            return        
+            return
 
 def batch_training_data(args, poses, hwf, K, images, i_train):
     H, W, _ = hwf
@@ -398,7 +392,7 @@ def batch_training_data(args, poses, hwf, K, images, i_train):
 
 def sample_random_ray_batch(args, images, poses, rays_rgb, N_rand, use_batching, i_batch, i_train, hwf, K, start, i):
     H, W, _ = hwf
-    
+
     # Sample random ray batch
     if use_batching:
         # Random over all images
@@ -428,11 +422,11 @@ def sample_random_ray_batch(args, images, poses, rays_rgb, N_rand, use_batching,
                 dW = int(W//2 * args.precrop_frac)
                 coords = torch.stack(
                     torch.meshgrid(
-                        torch.linspace(H//2 - dH, H//2 + dH - 1, 2*dH), 
+                        torch.linspace(H//2 - dH, H//2 + dH - 1, 2*dH),
                         torch.linspace(W//2 - dW, W//2 + dW - 1, 2*dW)
                     ), -1)
                 if i == start:
-                    print(f"[Config] Center cropping of size {2*dH} x {2*dW} is enabled until iter {args.precrop_iters}")                
+                    print(f"[Config] Center cropping of size {2*dH} x {2*dW} is enabled until iter {args.precrop_iters}")
             else:
                 coords = torch.stack(torch.meshgrid(torch.linspace(0, H-1, H), torch.linspace(0, W-1, W)), -1)  # (H, W, 2)
 
@@ -446,7 +440,7 @@ def sample_random_ray_batch(args, images, poses, rays_rgb, N_rand, use_batching,
 
     return batch_rays, target_s, rays_rgb, i_batch
 
-def save_checkpoints(args, model_train, optimizer, global_step, i):
+def save_checkpoints(args, coarse_model, fine_model, optimizer, global_step, i):
     basedir = args.basedir
     expname = args.expname
 
@@ -454,8 +448,8 @@ def save_checkpoints(args, model_train, optimizer, global_step, i):
     path = os.path.join(basedir, expname, '{:06d}.tar'.format(i))
     torch.save({
         'global_step': global_step,
-        'model_state_dict': model_train.coarse.state_dict(),
-        'fine_model_state_dict': model_train.fine.state_dict(),
+        'coarse_model_state_dict': coarse_model.state_dict(),
+        'fine_model_state_dict': fine_model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
     }, path)
     print('Saved checkpoints at', path)
