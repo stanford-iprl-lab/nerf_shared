@@ -7,9 +7,6 @@ import utils
 
 import torch.nn.functional as F
 
-#Converts an image's pixels values from [0, 1] to [0, 255]
-to8b = lambda x : (255*np.clip(x,0,1)).astype(np.uint8)
-
 DEBUG = False
 
 class Renderer(torch.nn.Module):
@@ -299,11 +296,11 @@ class Renderer(torch.nn.Module):
                                                      fine_model=fine_model,
                                                      retraw=retraw)
                 rgbs.append(rgb.cpu().numpy())
-                rgb8 = to8b(rgbs[-1])
+                rgb8 = utils.to8b(rgbs[-1])
                 filename = os.path.join(save_directory, '{:03d}.png'.format(i))
                 imageio.imwrite(filename, rgb8)
             if b_combine_as_video:
-                imageio.mimwrite(os.path.join(save_directory, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
+                imageio.mimwrite(os.path.join(save_directory, 'video.mp4'), utils.to8b(rgbs), fps=30, quality=8)
 
 # def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=0):
 

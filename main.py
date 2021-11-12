@@ -34,7 +34,7 @@ def run():
         optimizer = utils.get_optimizer(coarse_model, fine_model, args)
 
         # Load any available checkpoints.
-        start = utils.load_checkpoint(coarse_model, fine_model, optimizer, args)
+        start = utils.load_checkpoint(coarse_model, fine_model, optimizer, args, b_load_ckpnt_as_trainable=True)
 
         renderer = utils.get_renderer(args, bds_dict)
 
