@@ -145,36 +145,26 @@ def create_nerf_models(args):
 
     return coarse_model, fine_model
 
-def get_renderers(coarse_model, fine_model, args, bds_dict):
+def get_renderer(args, bds_dict):
 
-    render_kwargs_train = {
+    render_kwargs = {
         'perturb' : args.perturb,
         'N_importance' : args.N_importance,
         'N_samples' : args.N_samples,
         'use_viewdirs' : args.use_viewdirs,
         'white_bkgd' : args.white_bkgd,
         'raw_noise_std' : args.raw_noise_std,
-        'coarse_model' : coarse_model,
-        'fine_model' : fine_model
     }
 
     # NDC only good for LLFF-style forward facing data
     if args.dataset_type != 'llff' or args.no_ndc:
         print('Not ndc!')
-        render_kwargs_train['ndc'] = False
-        render_kwargs_train['lindisp'] = args.lindisp
+        render_kwargs['ndc'] = False
+        render_kwargs['lindisp'] = args.lindisp
 
-    render_kwargs_test = {k : render_kwargs_train[k] for k in render_kwargs_train}
-    render_kwargs_test['perturb'] = False
-    render_kwargs_test['raw_noise_std'] = 0.
+    render_kwargs.update(bds_dict)
 
-    render_kwargs_train.update(bds_dict)
-    render_kwargs_test.update(bds_dict)
-
-    train_renderer = render_utils.Renderer(render_kwargs_train)
-    test_renderer = render_utils.Renderer(render_kwargs_test)
-
-    return train_renderer, test_renderer
+    return render_utils.Renderer(**render_kwargs)
 
 def get_optimizer(coarse_model, fine_model, args):
     grad_vars = list(coarse_model.parameters())

@@ -38,8 +38,7 @@ def run():
         # Load any available checkpoints.
         start = utils.load_checkpoint(coarse_model, fine_model, optimizer, args)
 
-        renderer_train, renderer_test = get_renderers(coarse_model, fine_model,
-                                                      args, bds_dict)
+        renderer = get_renderer(args, bds_dict)
 
         global_step = start
 
@@ -57,6 +56,7 @@ def run():
 
         start = start + 1
         for i in trange(start, N_iters):
+            renderer.train()
             time0 = time.time()
 
             # Randomly select a batch of rays across images, or randomly sample from a single image per iteration
@@ -66,15 +66,14 @@ def run():
                                                     hwf, K, start, i)
 
             #####  Core optimization loop  #####
-            # Calls method of training renderer
-            rgb, _, _, extras = renderer_train.render_from_rays(H,
-                                                                W,
-                                                                K,
-                                                                chunk=args.chunk,
-                                                                rays=batch_rays,
-                                                                coarse_model=coarse_model,
-                                                                fine_model=fine_model,
-                                                                retraw=True)
+            rgb, _, _, extras = renderer.render_from_rays(H,
+                                                          W,
+                                                          K,
+                                                          chunk=args.chunk,
+                                                          rays=batch_rays,
+                                                          coarse_model=coarse_model,
+                                                          fine_model=fine_model,
+                                                          retraw=True)
 
             optimizer.zero_grad()
 
