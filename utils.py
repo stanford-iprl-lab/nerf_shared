@@ -172,7 +172,11 @@ def get_optimizer(coarse_model, fine_model, args):
 
     return optimizer
 
-def load_checkpoint(coarse_model, fine_model, optimizer, args):
+def load_checkpoint(coarse_model, fine_model, optimizer, args, b_load_ckpnt_as_trainable=False):
+    """
+    b_load_ckpnt_as_trainable - controls if we load file w/ grad set to true or false. If model 
+        will continue to be trained this must be True, otherwise set to False to save memory
+    """
     start = 0
     basedir = args.basedir
     expname = args.expname
@@ -186,9 +190,6 @@ def load_checkpoint(coarse_model, fine_model, optimizer, args):
 
     print('Found ckpts', ckpts)
 
-    ### BE CAREFUL HERE!!! IF YOU ARE LOADING FROM A CHECKPOINT,
-    ### YOU NEED TO CHANGE param.requires_grad to True
-    ### IF YOU PLAN ON CONTINUING TRAINING
     if len(ckpts) > 0 and not args.no_reload:
         ckpt_path = ckpts[-1]
         print('Reloading from', ckpt_path)
@@ -200,12 +201,12 @@ def load_checkpoint(coarse_model, fine_model, optimizer, args):
         # Load model
         coarse_model.load_state_dict(ckpt['coarse_model_state_dict'], strict=False)
         for param in coarse_model.parameters():
-            param.requires_grad = False
+            param.requires_grad = b_load_ckpnt_as_trainable
 
         if fine_model is not None:
             fine_model.load_state_dict(ckpt['fine_model_state_dict'])
             for param in fine_model.parameters():
-                param.requires_grad = False
+                param.requires_grad = b_load_ckpnt_as_trainable
 
     return start
 
