@@ -4,7 +4,7 @@
 [NeRF](http://www.matthewtancik.com/nerf) (Neural Radiance Fields) is a method that achieves state-of-the-art results for synthesizing novel views of complex scenes. The purpose of this repository is to create a more object-oriented, intelligible, and minimal codebase for general-purpose use (i.e., training NeRFs, performing pose estimation, etc.). For future works built on top of this project, please create a feature branch. 
 
 <details>
-  <summary> Table of Contents </summary>
+  <summary> Info </summary>
   
   ## Table of Contents
   - Installation
