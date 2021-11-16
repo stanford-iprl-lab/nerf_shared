@@ -11,6 +11,7 @@
   - Training
   - Examples
   - Creating Blender Datasets
+  - Present and Future Extensions of NeRFs
 
 ## Installation
 
@@ -56,7 +57,7 @@ bash download_example_data.sh
 
 To train a `lego` NeRF:
 ```
-python run_nerf.py --config configs/lego.txt
+python main.py --config configs/lego.txt
 ```
 Every 10k iterations, the log files will be updated to include test renders (`logs/lego_test/testset_X`) and zipped network weights at `logs/lego_test/X.tar` where `X` denotes the iteration number.
 
@@ -147,9 +148,16 @@ python main.py --config configs/{DATASET}.txt
 
 replace `{DATASET}` with your experiment name.
 
-
 ### Pre-trained Models
 We intend to provide some pre-trained models in the future. Stay tuned!
+
+
+## Future Direction
+Contained in the feature branches are the following extensions:
+- Navigation (Planning, Estimation, and Control) within NeRFs
+- Distributed NeRF training 
+- Speed ups to NeRF to make it real-time for robotics applications
+- Manipulation and NeRFs
 
 ## Citation
 Please cite the following works if you use anything from this repository:
