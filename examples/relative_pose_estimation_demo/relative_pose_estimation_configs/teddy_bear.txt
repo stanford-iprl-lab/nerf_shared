@@ -19,14 +19,14 @@ testskip = 1
 
 dil_iter = 3
 kernel_size = 5
-batch_size = 512
+batch_size = 128
 lrate_relative_pose_estimation = 0.01
 sampling_strategy = interest_regions
 
-delta_phi = 5.
-delta_theta = 0.
-delta_psi = 0.
-delta_t = 0.
+delta_phi = 2.
+delta_theta = 2.
+delta_psi = 2.
+delta_t = 0.1
 
 noise = None
 sigma = 0.01

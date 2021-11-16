@@ -250,7 +250,7 @@ def load_datasets(args):
         i_train, i_val, i_test = i_split
 
         near = 0.
-        far = 7.
+        far = 4.
 
         if args.white_bkgd:
             images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])

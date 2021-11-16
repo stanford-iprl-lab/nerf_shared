@@ -1,9 +1,8 @@
 import numpy as np
 import time
 import torch
-from torchtyping import TensorDetail, TensorType
-from typeguard import typechecked
-from tqdm import tqdm, trange
+from lietorch import SE3, LieGroupParameter
+from scipy.spatial.transform import Rotation as R
 
 import cv2
 import configargparse
@@ -54,9 +53,11 @@ def estimate_relative_pose(coarse_model, fine_model, renderer, sensor_image, sta
 
 
     # Create pose transformation model
-    start_pose = torch.Tensor(start_pose).to(device)
-    cam_transf = camera_transf().to(device)
-    optimizer = torch.optim.Adam(params=cam_transf.parameters(), lr=extra_arg_dict['lrate'], betas=(0.9, 0.999))
+    start_pose = SE3_to_trans_and_quat(start_pose)
+
+    starting_pose = SE3(torch.from_numpy(start_pose).float().cuda())
+    starting_pose = LieGroupParameter(starting_pose)
+    optimizer = torch.optim.Adam(params=[starting_pose], lr=extra_arg_dict['lrate'], betas=(0.9, 0.999))
 
     # calculate angles and translation of the observed image's pose
     if b_print_comparison_metrics:
@@ -78,9 +79,8 @@ def estimate_relative_pose(coarse_model, fine_model, renderer, sensor_image, sta
 
         target_s = obs_img_noised[batch[:, 1], batch[:, 0]]
         target_s = torch.Tensor(target_s).to(device)
-        pose = cam_transf(start_pose)
 
-        rays_o, rays_d = get_rays(H_obs, W_obs, K, pose)  # (H, W, 3), (H, W, 3)
+        rays_o, rays_d = get_rays(H_obs, W_obs, K, starting_pose.retr().matrix())  # (H, W, 3), (H, W, 3)
         rays_o = rays_o[batch[:, 1], batch[:, 0]]  # (N_rand, 3)
         rays_d = rays_d[batch[:, 1], batch[:, 0]]
         batch_rays = torch.stack([rays_o, rays_d], 0)
@@ -108,7 +108,7 @@ def estimate_relative_pose(coarse_model, fine_model, renderer, sensor_image, sta
             print('Loss: ', loss)
 
             with torch.no_grad():
-                pose_dummy = pose.cpu().detach().numpy()
+                pose_dummy = starting_pose.retr().matrix().cpu().detach().numpy()
                 # calculate angles and translation of the optimized pose
                 phi = np.arctan2(pose_dummy[1, 0], pose_dummy[0, 0]) * 180 / np.pi
                 theta = np.arctan2(-pose_dummy[2, 0], np.sqrt(pose_dummy[2, 1] ** 2 + pose_dummy[2, 2] ** 2)) * 180 / np.pi
@@ -124,14 +124,14 @@ def estimate_relative_pose(coarse_model, fine_model, renderer, sensor_image, sta
                 print('Rotation error: ', rot_error)
                 print('Translation error: ', translation_error)
                 print('-----------------------------------')
-        '''
+    '''
             if b_generate_overlaid_images:
                 with torch.no_grad():
                     rgb, _, _, _ = renderer.render_from_pose(H_obs,
                                                              W_obs,
                                                              K,
                                                              chunk=general_args.chunk,
-                                                             c2w=pose[:3, :4],
+                                                             c2w=starting_pose.retr().matrix()[:3, :4],
                                                              coarse_model=coarse_model,
                                                              fine_model=fine_model,
                                                              retraw=True)
@@ -148,6 +148,13 @@ def estimate_relative_pose(coarse_model, fine_model, renderer, sensor_image, sta
     '''
     print("Done with main relative_pose_estimation loop")
 
+def SE3_to_trans_and_quat(data):
+    rot = data[:3, :3]
+    trans = data[:3, 3]
+
+    r = R.from_matrix(rot)
+    quat = r.as_quat()
+    return np.concatenate([trans, quat])
 
 def find_POI(img_rgb, DEBUG=False): # img - RGB image in range 0...255
     img = np.copy(img_rgb)
@@ -199,25 +206,6 @@ def vec2ss_matrix(vector):  # vector to skewsym. matrix
     ss_matrix[2, 1] = vector[0]
 
     return ss_matrix
-
-
-class camera_transf(nn.Module):
-    def __init__(self):
-        super(camera_transf, self).__init__()
-        self.w = nn.Parameter(torch.normal(0., 1e-6, size=(3,)))
-        self.v = nn.Parameter(torch.normal(0., 1e-6, size=(3,)))
-        self.theta = nn.Parameter(torch.normal(0., 1e-6, size=()))
-
-    def forward(self, x):
-        exp_i = torch.zeros((4,4))
-        w_skewsym = vec2ss_matrix(self.w)
-        v_skewsym = vec2ss_matrix(self.v)
-        exp_i[:3, :3] = torch.eye(3) + torch.sin(self.theta) * w_skewsym + (1 - torch.cos(self.theta)) * torch.matmul(w_skewsym, w_skewsym)
-        exp_i[:3, 3] = torch.matmul(torch.eye(3) * self.theta + (1 - torch.cos(self.theta)) * w_skewsym + (self.theta - torch.sin(self.theta)) * torch.matmul(w_skewsym, w_skewsym), self.v)
-        exp_i[3, 3] = 1.
-        T_i = torch.matmul(exp_i, x)
-        return T_i
-
 
 def extra_config_parser():
     '''
@@ -348,8 +336,6 @@ def extra_config_parser():
                         help='frequency of render_poses video saving')
     return parser
 
-
-
 if __name__=='__main__':
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
     torch.cuda.empty_cache()
@@ -405,4 +391,5 @@ if __name__=='__main__':
                            obs_img_pose=gt_pose,
                            obs_img=obs_img)
     print('Elapsed', time.time() - t)
+
 
