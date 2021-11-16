@@ -115,7 +115,7 @@ NOTE: Setting `half_res` to True will also cause the NeRF model to render at hal
 ### Data
 The `data` folder is separated into real-life training data `nerf_llff_data` and synthetic (e.g., Blender) data in `nerf_synthetic`. However, the structure within both is the same. Within each scenes folder, there MUST HAVE 3 folders `test`, `train`, and `val` containing the corresponding images, and their respective ground truth poses under `transforms_....json`. It is recommended to look at the `.json` file to see camera instrinsic parameters that the file should provide beside poses.
 
-## Training
+## Examples and Other Functionality
 In the `examples` folder contain example scripts to perform functionality beyond training, such as pose estimation. Within those folders will be anothe README containing a more in-depth how-to.
 
 ## Blender Specific
