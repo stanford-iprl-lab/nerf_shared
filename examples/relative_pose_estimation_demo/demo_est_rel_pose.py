@@ -31,7 +31,6 @@ def estimate_relative_pose(coarse_model, fine_model, renderer, sensor_image, sta
     W_obs = sensor_image.shape[0]
     H_obs = sensor_image.shape[1]
 
-
      # find points of interest of the observed image
     POI = find_POI(obs_img_noised, DEBUG)  # xy pixel coordinates of points of interest (N x 2)
     obs_img_noised = (np.array(obs_img_noised) / 255.).astype(np.float32)
