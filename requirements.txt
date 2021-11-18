@@ -4,9 +4,9 @@
 _libgcc_mutex
 _openmp_mutex
 absl-py
-blas=1.0
+blas
 bottleneck
-bzip2=1.0.8
+bzip2
 ca-certificates
 certifi
 configargparse
