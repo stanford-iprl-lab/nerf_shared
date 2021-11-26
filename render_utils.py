@@ -93,7 +93,11 @@ class Renderer(torch.nn.Module):
         """
         N_rays = ray_batch.shape[0]
         rays_o, rays_d = ray_batch[:,0:3], ray_batch[:,3:6] # [N_rays, 3] each
-        viewdirs = ray_batch[:,-3:] if ray_batch.shape[-1] > 6 else None
+        #viewdirs = ray_batch[:,-3:] if ray_batch.shape[-1] > 6 else None
+        #print(ray_batch.shape)
+        viewdirs = ray_batch[:,-3:] if ray_batch.shape[-1] > 8 else None
+        bounds = torch.reshape(ray_batch[...,6:8], [-1,1,2])
+        self.near, self.far = bounds[...,0], bounds[...,1] # [-1,1]
 
         t_vals = torch.linspace(0., 1., steps=self.N_samples)
         if not self.lindisp:
@@ -103,9 +107,9 @@ class Renderer(torch.nn.Module):
 
         z_vals = z_vals.expand([N_rays, self.N_samples])
 
-        perturb_points = self.perturb and self.training
+        #perturb_points = self.perturb and self.training
 
-        if perturb_points:
+        if self.perturb > 0.:
             # get intervals between samples
             mids = .5 * (z_vals[...,1:] + z_vals[...,:-1])
             upper = torch.cat([mids, z_vals[...,-1:]], -1)
@@ -124,7 +128,6 @@ class Renderer(torch.nn.Module):
         pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
 
         raw = coarse_model(pts, viewdirs)
-        #raw = network_query_fn(pts, viewdirs, network_fn)
         rgb_map, disp_map, acc_map, weights, depth_map = self.raw2outputs(
             raw, z_vals, rays_d, pytest=pytest)
 
@@ -135,7 +138,7 @@ class Renderer(torch.nn.Module):
             z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
             z_samples = utils.sample_pdf(z_vals_mid, weights[...,1:-1],
                                          self.N_importance,
-                                         det=perturb_points, pytest=pytest)
+                                         det=(self.perturb==0.), pytest=pytest)
             z_samples = z_samples.detach()
 
             z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
@@ -211,11 +214,13 @@ class Renderer(torch.nn.Module):
         rays_o = torch.reshape(rays_o, [-1,3]).float()
         rays_d = torch.reshape(rays_d, [-1,3]).float()
 
-        rays = torch.cat([rays_o, rays_d], -1)
+        near, far = self.near * torch.ones_like(rays_d[...,:1]), self.far * torch.ones_like(rays_d[...,:1])
+        rays = torch.cat([rays_o, rays_d, near, far], -1)
         if self.use_viewdirs:
             rays = torch.cat([rays, viewdirs], -1)
 
         # Render and reshape
+        #print(rays.shape)
         all_ret = self.render_batch(coarse_model, fine_model, rays, chunk, retraw)
         for k in all_ret:
             k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
@@ -249,7 +254,7 @@ class Renderer(torch.nn.Module):
 
         rgb = torch.sigmoid(raw[...,:3])  # [N_rays, N_samples, 3]
         noise = 0.
-        if self.raw_noise_std > 0. and self.training:
+        if self.raw_noise_std > 0.:
             noise = torch.randn(raw[...,3].shape) * self.raw_noise_std
 
             # Overwrite randomly sampled data if pytest

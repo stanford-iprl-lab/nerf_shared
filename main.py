@@ -8,6 +8,8 @@ import utils
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
+torch.manual_seed(0)
+
 DEBUG = False
 
 def run():
@@ -15,6 +17,7 @@ def run():
     args = parser.parse_args()
 
     if args.training is True:
+
         #Loads dataset info like images and Ground Truth poses and camera intrinsics
         images, poses, render_poses, hwf, i_split, K, bds_dict = utils.load_datasets(args)
 
@@ -34,7 +37,7 @@ def run():
         optimizer = utils.get_optimizer(coarse_model, fine_model, args)
 
         # Load any available checkpoints.
-        start = utils.load_checkpoint(coarse_model, fine_model, optimizer, args, b_load_ckpnt_as_trainable=True)
+        start = utils.load_checkpoint(coarse_model, fine_model, optimizer, args, b_load_ckpnt_as_trainable=False)
 
         renderer = utils.get_renderer(args, bds_dict)
 
@@ -55,7 +58,6 @@ def run():
         start = start + 1
         for i in tqdm.trange(start, N_iters):
             renderer.train()
-            time0 = time.time()
 
             # Randomly select a batch of rays across images, or randomly sample from a single image per iteration
             # determined by boolean use_batching
@@ -72,9 +74,7 @@ def run():
                                                           coarse_model=coarse_model,
                                                           fine_model=fine_model,
                                                           retraw=True)
-
             optimizer.zero_grad()
-
             #Mean squared error between rendered ray RGB vs. Ground Truth RGB using the fine model
             img_loss = utils.img2mse(rgb, target_s)
             trans = extras['raw'][...,-1]

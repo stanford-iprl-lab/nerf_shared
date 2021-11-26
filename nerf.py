@@ -95,7 +95,6 @@ class NeRF(nn.Module):
 
     def forward(self, inputs, viewdirs, netchunk=1024*64):
         inputs_flat = torch.reshape(inputs, [-1, inputs.shape[-1]])
-        #print('inputs', inputs_flat.shape)
         embedded = self.embed_fn(inputs_flat)
 
         if viewdirs is not None:
@@ -109,8 +108,6 @@ class NeRF(nn.Module):
         return outputs
 
     def MLP(self, x):
-        #print('x', x.shape)
-        #print(self.input_ch, self.input_ch_views)
         input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1)
         h = input_pts
         for i, l in enumerate(self.pts_linears):

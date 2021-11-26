@@ -17,7 +17,6 @@ import torch.nn.functional as F
 torch.autograd.set_detect_anomaly(True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-np.random.seed(0)
 DEBUG = False
 
 ### MISC FUNCTIONS ####
@@ -164,7 +163,7 @@ def get_renderer(args, bds_dict):
 def get_optimizer(coarse_model, fine_model, args):
     grad_vars = list(coarse_model.parameters())
 
-    if fine_model:
+    if fine_model is not None:
         grad_vars += list(fine_model.parameters())
 
     # Create optimizer

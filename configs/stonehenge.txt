@@ -1,7 +1,9 @@
-expname = stonehenge_test
+expname = stonehenge
 basedir = ./logs
 datadir = ./data/nerf_synthetic/stonehenge
 dataset_type = blender
+
+training = True
 
 no_batching = True
 
