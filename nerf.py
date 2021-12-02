@@ -112,6 +112,7 @@ class NeRF(nn.Module):
         h = input_pts
         for i, l in enumerate(self.pts_linears):
             h = self.pts_linears[i](h)
+            #h = F.leaky_relu(h, negative_slope=.1)
             h = F.relu(h)
             if i in self.skips:
                 h = torch.cat([input_pts, h], -1)
