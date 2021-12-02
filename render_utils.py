@@ -97,13 +97,13 @@ class Renderer(torch.nn.Module):
         #print(ray_batch.shape)
         viewdirs = ray_batch[:,-3:] if ray_batch.shape[-1] > 8 else None
         bounds = torch.reshape(ray_batch[...,6:8], [-1,1,2])
-        self.near, self.far = bounds[...,0], bounds[...,1] # [-1,1]
+        near, far = bounds[...,0], bounds[...,1] # [-1,1]
 
         t_vals = torch.linspace(0., 1., steps=self.N_samples)
         if not self.lindisp:
-            z_vals = self.near * (1.-t_vals) + self.far * (t_vals)
+            z_vals = near * (1.-t_vals) + far * (t_vals)
         else:
-            z_vals = 1./(1./self.near * (1.-t_vals) + 1./self.far * (t_vals))
+            z_vals = 1./(1./near * (1.-t_vals) + 1./far * (t_vals))
 
         z_vals = z_vals.expand([N_rays, self.N_samples])
 
@@ -298,9 +298,8 @@ class Renderer(torch.nn.Module):
                                                      chunk=chunk,
                                                      c2w=c2w,
                                                      coarse_model=coarse_model,
-                                                     fine_model=fine_model,
-                                                     retraw=retraw)
-                rgbs.append(rgb.cpu().numpy())
+                                                     fine_model=fine_model)
+                rgbs.append(rgb.cpu().detach().numpy())
                 rgb8 = utils.to8b(rgbs[-1])
                 filename = os.path.join(save_directory, '{:03d}.png'.format(i))
                 imageio.imwrite(filename, rgb8)

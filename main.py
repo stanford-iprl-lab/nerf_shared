@@ -37,7 +37,7 @@ def run():
         optimizer = utils.get_optimizer(coarse_model, fine_model, args)
 
         # Load any available checkpoints.
-        start = utils.load_checkpoint(coarse_model, fine_model, optimizer, args, b_load_ckpnt_as_trainable=False)
+        start = utils.load_checkpoint(coarse_model, fine_model, optimizer, args, b_load_ckpnt_as_trainable=True)
 
         renderer = utils.get_renderer(args, bds_dict)
 
@@ -125,7 +125,7 @@ def run():
                                                  fine_model=fine_model, 
                                                  retraw=True, 
                                                  save_directory=os.path.join(args.basedir, args.expname, 'testset_{:06d}'.format(i)),
-                                                 b_combine_as_video=True)
+                                                 b_combine_as_video=False)
             
             #Displays loss and PSNR (Peak signal to noise ratio) of the fine reconstruction loss
             if i%args.i_print==0:
