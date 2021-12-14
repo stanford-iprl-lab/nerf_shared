@@ -20,7 +20,6 @@ def run():
 
         #Loads dataset info like images and Ground Truth poses and camera intrinsics
         images, poses, render_poses, hwf, i_split, K, bds_dict = utils.load_datasets(args)
-
         # Train, val, test split
         i_train, i_val, i_test = i_split
 
@@ -138,7 +137,8 @@ def run():
         pass
 
 if __name__=='__main__':
-    torch.set_default_tensor_type('torch.cuda.FloatTensor')
-    torch.cuda.empty_cache()
+    if device.type != 'cpu': 
+        torch.set_default_tensor_type('torch.cuda.FloatTensor')
+        torch.cuda.empty_cache()
 
     run()
