@@ -5,7 +5,8 @@ dataset_type = blender
 training = True
 
 tensorboard = True
-i_test = 1000
+i_test = 400
+chunk = 12000
 
 no_batching = True
 
