@@ -311,7 +311,7 @@ class Renderer(torch.nn.Module):
                 imageio.mimwrite(os.path.join(save_directory, 'video.mp4'), utils.to8b(rgbs), fps=30, quality=8)
             if tb_writer is not None:
                 rgb_tensor = torch.tensor(utils.to8b(rgbs))
-                tb_writer.add_images('Test/Images', rgb_tensor, dataformat="NHWC")
+                tb_writer.add_images('Test/Images', rgb_tensor, dataformats="NHWC")
 
 # def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=0):
 
