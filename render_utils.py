@@ -284,9 +284,12 @@ class Renderer(torch.nn.Module):
         return rgb_map, disp_map, acc_map, weights, depth_map
 
 
-    def render_from_batch_poses(self, H, W, K, chunk, batch_c2w, coarse_model, fine_model, retraw, save_directory, b_combine_as_video=False):
+    def render_from_batch_poses(self, H, W, K, chunk, batch_c2w, coarse_model, fine_model,
+                                retraw, save_directory, b_combine_as_video=False,
+                                tb_writer=None):
         '''
-        take in a set of poses, render them as images, and save them
+        take in a set of poses, render them as images, and save them or log them
+        with tensorboard.
         '''
         os.makedirs(save_directory, exist_ok=True)
         rgbs = []
@@ -302,9 +305,13 @@ class Renderer(torch.nn.Module):
                 rgbs.append(rgb.cpu().detach().numpy())
                 rgb8 = utils.to8b(rgbs[-1])
                 filename = os.path.join(save_directory, '{:03d}.png'.format(i))
-                imageio.imwrite(filename, rgb8)
+                if tb_writer is None:
+                    imageio.imwrite(filename, rgb8)
             if b_combine_as_video:
                 imageio.mimwrite(os.path.join(save_directory, 'video.mp4'), utils.to8b(rgbs), fps=30, quality=8)
+            if tb_writer is not None:
+                rgb_tensor = torch.tensor(utils.to8b(rgbs))
+                tb_writer.add_images('Test/Images', rgb_tensor)
 
 # def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=0):
 
