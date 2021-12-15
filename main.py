@@ -132,7 +132,8 @@ def run():
                                                  fine_model=fine_model, 
                                                  retraw=True, 
                                                  save_directory=os.path.join(args.basedir, args.expname, 'testset_{:06d}'.format(i)),
-                                                 b_combine_as_video=False)
+                                                 b_combine_as_video=False,
+                                                 tb_writer=tb_writer)
             
             #Displays loss and PSNR (Peak signal to noise ratio) of the fine reconstruction loss
             if i%args.i_print==0:
