@@ -3,6 +3,7 @@ basedir = ./logs
 datadir = ./data/nerf_synthetic/lego
 dataset_type = blender
 training = True
+tensorboard = True
 
 no_batching = True
 

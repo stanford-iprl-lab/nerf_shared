@@ -5,6 +5,7 @@ import time
 import torch
 import tqdm
 import utils
+from torch.utils.tensorboard.writer import SummaryWriter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
@@ -28,6 +29,13 @@ def run():
 
         # Copy config file to log file
         utils.copy_log_dir(args)
+
+        # Tensorboard Support
+        if args.tensorboard:
+            tbdir = os.path.join(args.basedir, args.expname, "tb_logs")
+            tb_writer = SummaryWriter(log_dir=tbdir)
+        else:
+            tb_writer = None
 
         # Create coarse/fine NeRF models.
         coarse_model, fine_model = utils.create_nerf_models(args)
@@ -128,7 +136,7 @@ def run():
             
             #Displays loss and PSNR (Peak signal to noise ratio) of the fine reconstruction loss
             if i%args.i_print==0:
-                utils.print_statistics(args, loss, psnr, i)
+                utils.print_statistics(args, loss, psnr, i, tb_writer=tb_writer)
 
             global_step += 1
 
