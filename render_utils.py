@@ -305,8 +305,7 @@ class Renderer(torch.nn.Module):
                 rgbs.append(rgb.cpu().detach().numpy())
                 rgb8 = utils.to8b(rgbs[-1])
                 filename = os.path.join(save_directory, '{:03d}.png'.format(i))
-                if tb_writer is None:
-                    imageio.imwrite(filename, rgb8)
+                imageio.imwrite(filename, rgb8)
             if b_combine_as_video:
                 imageio.mimwrite(os.path.join(save_directory, 'video.mp4'), utils.to8b(rgbs), fps=30, quality=8)
             if tb_writer is not None:
