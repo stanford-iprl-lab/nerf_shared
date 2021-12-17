@@ -4,6 +4,10 @@ datadir = ./data/nerf_synthetic/lego
 dataset_type = blender
 training = True
 
+tensorboard = True
+i_test = 400
+chunk = 12000
+
 no_batching = True
 
 use_viewdirs = True

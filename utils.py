@@ -484,8 +484,13 @@ def render_test_poses(args, images, poses, hwf, K, render_kwargs_test, i_split, 
         render_path(torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test, gt_imgs=images[i_test], savedir=testsavedir)
     print('Saved test set')
 
-def print_statistics(args, loss, psnr, i):
+def print_statistics(args, loss, psnr, i, tb_writer=None):
     tqdm.tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
+
+    # Add scalars to tensorboard if using
+    if tb_writer is not None:
+        tb_writer.add_scalar("Test/Loss", loss, i)
+        tb_writer.add_scalar("Test/PSNR", psnr, i)
     """
         print(expname, i, psnr.numpy(), loss.numpy(), global_step.numpy())
         print('iter time {:.05f}'.format(dt))

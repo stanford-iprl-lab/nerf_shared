@@ -5,6 +5,7 @@ import time
 import torch
 import tqdm
 import utils
+from torch.utils.tensorboard.writer import SummaryWriter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 np.random.seed(0)
@@ -20,7 +21,6 @@ def run():
 
         #Loads dataset info like images and Ground Truth poses and camera intrinsics
         images, poses, render_poses, hwf, i_split, K, bds_dict = utils.load_datasets(args)
-
         # Train, val, test split
         i_train, i_val, i_test = i_split
 
@@ -29,6 +29,13 @@ def run():
 
         # Copy config file to log file
         utils.copy_log_dir(args)
+
+        # Tensorboard Support
+        if args.tensorboard:
+            tbdir = os.path.join(args.basedir, args.expname, "tb_logs")
+            tb_writer = SummaryWriter(log_dir=tbdir)
+        else:
+            tb_writer = None
 
         # Create coarse/fine NeRF models.
         coarse_model, fine_model = utils.create_nerf_models(args)
@@ -125,11 +132,12 @@ def run():
                                                  fine_model=fine_model, 
                                                  retraw=True, 
                                                  save_directory=os.path.join(args.basedir, args.expname, 'testset_{:06d}'.format(i)),
-                                                 b_combine_as_video=False)
+                                                 b_combine_as_video=False,
+                                                 tb_writer=tb_writer)
             
             #Displays loss and PSNR (Peak signal to noise ratio) of the fine reconstruction loss
             if i%args.i_print==0:
-                utils.print_statistics(args, loss, psnr, i)
+                utils.print_statistics(args, loss, psnr, i, tb_writer=tb_writer)
 
             global_step += 1
 
@@ -138,7 +146,8 @@ def run():
         pass
 
 if __name__=='__main__':
-    torch.set_default_tensor_type('torch.cuda.FloatTensor')
-    torch.cuda.empty_cache()
+    if device.type != 'cpu': 
+        torch.set_default_tensor_type('torch.cuda.FloatTensor')
+        torch.cuda.empty_cache()
 
     run()

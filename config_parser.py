@@ -110,5 +110,7 @@ def config_parser():
                         help='frequency of testset saving')
     parser.add_argument("--i_video",   type=int, default=50000, 
                         help='frequency of render_poses video saving')
+    parser.add_argument("--tensorboard", type=bool, default=False,
+                        help='log statistics and test images with tensorboard')
 
     return parser

@@ -12,6 +12,7 @@
   - Examples
   - Creating Blender Datasets
   - Present and Future Extensions of NeRFs
+  - Using Tensorboard
 
 ## Installation
 
@@ -24,7 +25,7 @@ cd nerf-shared
 conda env create -n nerf-shared -f environment.yml
 ```
 
-If you run into dependency issues, try just doing a ```pip install```. For packages like lietorch or torchsearchsorted (this dependency will come in Stable V2), please go to [LieTorch](https://github.com/princeton-vl/lietorch) and [searchsorted](https://github.com/aliutkus/torchsearchsorted) and follow their installiation instructions.
+If you run into dependency issues, try just doing a `pip install`. For packages like lietorch or torchsearchsorted (this dependency will come in Stable V2), please go to [LieTorch](https://github.com/princeton-vl/lietorch) and [searchsorted](https://github.com/aliutkus/torchsearchsorted) and follow their installiation instructions.
 
 Here is a full list of dependencies (WIP, not up to date):
 <details>
@@ -138,6 +139,32 @@ where `"frames"` is a list of dictionaries (one for each image) containing the f
   "file_path": "./{test,train,val}/img_name"  #File path
 }
 ```
+## Tensorboard for monitoring training
+To enable logging with Tensorboard add the `tensorboard=True` argument to your config file, and pass the `SummaryWriter` object to the appropriate logging functions (examples of this in `main.py`). This augments the existing logging functionality, and does not override it.
+
+As of now Tensorboard monitors loss, PSNR, and test images.
+
+### An example workflow for Tensorboard with `main.py` on a remote machine:
+
+Open a terminal:
+```
+ssh <user@remote>
+cd <nerf_shared directory on remote>
+python main.py --config configs/tb_lego.txt
+```
+
+In a second terminal:
+```
+# Forward the port from the remote machine to your local machine
+ssh -N -f -L localhost:16006:localhost:6006 <user@remote>
+
+# Start the tensorboard server on the remote server
+ssh <user@remote>
+cd <nerf_shared directory on remote>/logs/blender_paper_lego/tb_logs/
+tensorboard --logdir . --port 6006
+```
+
+On your local machine then navigate to http://localhost:16006/# .
 
 ### Misc
 To train NeRF on different datasets: 
