@@ -8,3 +8,5 @@
 data/*
 logs/*
 .DS_Store
+
+examples/relative_pose_estimation_demo/relative_pose_estimation_output/

@@ -1,0 +1,34 @@
+expname = teddy_bear
+datadir = ../../data/nerf_synthetic/teddy_bear/
+dataset_type = blender
+output_dir = ./relative_pose_estimation_output/
+basedir = ../../logs
+
+no_batching = True
+
+use_viewdirs = True
+white_bkgd = True
+lrate_decay = 500
+
+N_samples = 64
+N_importance = 128
+N_rand = 1024
+
+half_res = True
+testskip = 1
+
+dil_iter = 3
+kernel_size = 5
+batch_size = 256
+lrate_relative_pose_estimation = 0.005
+sampling_strategy = interest_regions
+
+delta_phi = 15.
+delta_theta = 15.
+delta_psi = 15.
+delta_t = 0.1
+
+noise = None
+sigma = 0.01
+amount = 0.8
+delta_brightness = 0.

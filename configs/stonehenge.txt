@@ -1,0 +1,31 @@
+expname = stonehenge
+basedir = ./logs
+datadir = ./data/nerf_synthetic/stonehenge
+dataset_type = blender
+
+training = True
+
+no_batching = True
+
+use_viewdirs = True
+white_bkgd = True
+lrate_decay = 500
+chunk = 25000
+N_samples = 64
+N_importance = 128
+N_rand = 1024
+
+multires = 15
+multires_views = 6
+
+precrop_iters = 500
+precrop_frac = 0.5
+
+half_res = True
+
+i_testset = 10000
+
+i_video = 500000
+
+
+
