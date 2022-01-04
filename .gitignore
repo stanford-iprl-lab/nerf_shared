@@ -8,6 +8,5 @@
 data/*
 logs/*
 .DS_Store
-*.egg-info
 
 examples/relative_pose_estimation_demo/relative_pose_estimation_output/

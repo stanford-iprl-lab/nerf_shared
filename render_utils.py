@@ -1,12 +1,11 @@
 import imageio
+import nerf
 import numpy as np
 import os
 import torch
+import utils
 
 import torch.nn.functional as F
-
-from nerf_shared import nerf
-from nerf_shared import utils
 
 DEBUG = False
 
