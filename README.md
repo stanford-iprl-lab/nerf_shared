@@ -1,11 +1,11 @@
 # MSL-IPRL NeRF Stable Repository V1
 
 
-[NeRF](http://www.matthewtancik.com/nerf) (Neural Radiance Fields) is a method that achieves state-of-the-art results for synthesizing novel views of complex scenes. The purpose of this repository is to create a more object-oriented, intelligible, and minimal codebase for general-purpose use (i.e., training NeRFs, performing pose estimation, etc.). For future works built on top of this project, please create a feature branch. 
+[NeRF](http://www.matthewtancik.com/nerf) (Neural Radiance Fields) is a method that achieves state-of-the-art results for synthesizing novel views of complex scenes. The purpose of this repository is to create a more object-oriented, intelligible, and minimal codebase for general-purpose use (i.e., training NeRFs, performing pose estimation, etc.). For future works built on top of this project, please create a feature branch.
 
 <details>
   <summary> Info </summary>
-  
+
   ## Table of Contents
   - Installation
   - Training
@@ -30,7 +30,7 @@ If you run into dependency issues, try just doing a `pip install`. For packages 
 Here is a full list of dependencies (WIP, not up to date):
 <details>
   <summary> Dependencies (click to expand) </summary>
-  
+
   ## Dependencies
   - PyTorch 1.4
   - matplotlib
@@ -46,6 +46,8 @@ You will also need the [LLFF code](http://github.com/fyusion/llff) (and COLMAP) 
 Typically, we've just used Blender datasets for ground-truth images and poses. Please see the section below on how to create a Blender dataset that NeRFs can train on.
 
 </details>
+
+Finally, install the package by running `pip install -e .` from the base directory. This will locally install the package in "editable" mode -- if you change the package or pull down changes, these should be reflected when import modules from the package.
 
 ## Training
 
@@ -65,13 +67,13 @@ Every 10k iterations, the log files will be updated to include test renders (`lo
 ### More Datasets
 To play with other scenes presented in the paper, download the data [here](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1). Place the downloaded dataset according to the following directory structure:
 ```
-├── configs                                                                                                       
-│   ├── ...                                                                                     
-│                                                                                               
-├── data                                                                                                                                                                                                       
-│   ├── nerf_llff_data                                                                                                  
-│   │   └── fern                                                                                                                             
-│   │   └── flower  # downloaded llff dataset                                                                                  
+├── configs
+│   ├── ...
+│
+├── data
+│   ├── nerf_llff_data
+│   │   └── fern
+│   │   └── flower  # downloaded llff dataset
 │   │   └── horns   # downloaded llff dataset
 |   |   └── ...
 |   ├── nerf_synthetic
@@ -107,7 +109,7 @@ The rest are dataset specific. NOTE: If you are using Blender as your dataset, m
 In `logs` folder, a folder will automatically be generated storing your rendered test images and neural network weights, along with some text files indicating the config used to train the model (Very important when sharing models with others!).
 
 ### Configs
-In `configs` folder contains the config file used to train a particular NeRF. It is highly recommended to take a look at the example config files in order to understand how your model will behave during training. Some parameters that are particularly important if you decide to copy and paste the example config files are `expname, datadir, dataset_type, white_bkgd, half_res` which determine the experiment's name and corresponding name of the log file in `logs`, the directory in which you stored the training data, where you got your dataset from (e.g., Blender), whether or not the NeRF should be trained on images with white backgrounds, and whether you want your model to train on training images at half resolution. 
+In `configs` folder contains the config file used to train a particular NeRF. It is highly recommended to take a look at the example config files in order to understand how your model will behave during training. Some parameters that are particularly important if you decide to copy and paste the example config files are `expname, datadir, dataset_type, white_bkgd, half_res` which determine the experiment's name and corresponding name of the log file in `logs`, the directory in which you stored the training data, where you got your dataset from (e.g., Blender), whether or not the NeRF should be trained on images with white backgrounds, and whether you want your model to train on training images at half resolution.
 
 NOTE: `white_bkgd` primarily applies to Blender datasets that have transparent images so that setting `white_bkgd=True` will allow the NeRF to render properly. If your images have solid background colors, set this parameter to False.
 
@@ -167,7 +169,7 @@ tensorboard --logdir . --port 6006
 On your local machine then navigate to http://localhost:16006/# .
 
 ### Misc
-To train NeRF on different datasets: 
+To train NeRF on different datasets:
 
 ```
 python main.py --config configs/{DATASET}.txt
@@ -182,7 +184,7 @@ We intend to provide some pre-trained models in the future. Stay tuned!
 ## Future Direction
 Contained in the feature branches are the following extensions:
 - Navigation (Planning, Estimation, and Control) within NeRFs
-- Distributed NeRF training 
+- Distributed NeRF training
 - Speed ups to NeRF to make it real-time for robotics applications
 - Manipulation and NeRFs
 

@@ -1,20 +1,19 @@
 import imageio
-import load_blender
-import load_deepvoxels
-import load_LINEMOD
-import load_llff
-import nerf
 import numpy as np
 import os
-import render_utils
 import time
 import torch
 import tqdm
 
+from nerf_shared import load_blender
+from nerf_shared import load_deepvoxels
+from nerf_shared import load_LINEMOD
+from nerf_shared import load_llff
+from nerf_shared import nerf
+from nerf_shared import render_utils
+
 import torch.nn as nn
 import torch.nn.functional as F
-
-torch.autograd.set_detect_anomaly(True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DEBUG = False
@@ -173,7 +172,7 @@ def get_optimizer(coarse_model, fine_model, args):
 
 def load_checkpoint(coarse_model, fine_model, optimizer, args, b_load_ckpnt_as_trainable=False):
     """
-    b_load_ckpnt_as_trainable - controls if we load file w/ grad set to true or false. If model 
+    b_load_ckpnt_as_trainable - controls if we load file w/ grad set to true or false. If model
         will continue to be trained this must be True, otherwise set to False to save memory
     """
     start = 0
