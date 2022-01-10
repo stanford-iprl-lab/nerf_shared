@@ -170,7 +170,8 @@ def get_optimizer(coarse_model, fine_model, args):
 
     return optimizer
 
-def load_checkpoint(coarse_model, fine_model, optimizer, args, b_load_ckpnt_as_trainable=False):
+def load_checkpoint(coarse_model, fine_model, optimizer, args,
+                    b_load_ckpnt_as_trainable=False, checkpoint_index=None):
     """
     b_load_ckpnt_as_trainable - controls if we load file w/ grad set to true or false. If model
         will continue to be trained this must be True, otherwise set to False to save memory
@@ -189,7 +190,10 @@ def load_checkpoint(coarse_model, fine_model, optimizer, args, b_load_ckpnt_as_t
     print('Found ckpts', ckpts)
 
     if len(ckpts) > 0 and not args.no_reload:
-        ckpt_path = ckpts[-1]
+        if checkpoint_index is not None:
+            ckpt_path = ckpts[checkpoint_index]
+        else:
+            ckpt_path = ckpts[-1]
         print('Reloading from', ckpt_path)
         ckpt = torch.load(ckpt_path, map_location=device)
 
