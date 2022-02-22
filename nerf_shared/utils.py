@@ -147,13 +147,14 @@ def get_renderer(args, bds_dict):
         'use_viewdirs' : args.use_viewdirs,
         'white_bkgd' : args.white_bkgd,
         'raw_noise_std' : args.raw_noise_std,
+        'ndc' : True,
+        'lindisp' : args.lindisp
     }
 
     # NDC only good for LLFF-style forward facing data
     if args.dataset_type != 'llff' or args.no_ndc:
         print('Not ndc!')
         render_kwargs['ndc'] = False
-        render_kwargs['lindisp'] = args.lindisp
 
     render_kwargs.update(bds_dict)
 
@@ -245,14 +246,11 @@ def load_datasets(args):
         print('NEAR FAR', near, far)
 
     elif args.dataset_type == 'blender':
-        images, poses, render_poses, hwf, i_split = load_blender.load_blender_data(
+        images, poses, render_poses, hwf, i_split, near, far = load_blender.load_blender_data(
             args.datadir, args.half_res, args.testskip)
 
         print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
         i_train, i_val, i_test = i_split
-
-        near = 0.
-        far = 4.
 
         if args.white_bkgd:
             images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])
