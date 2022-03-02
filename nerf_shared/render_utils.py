@@ -69,6 +69,7 @@ class Renderer(torch.nn.Module):
                     coarse_model,
                     fine_model,
                     retraw=False,
+                    retweights=False,
                     verbose=False,
                     pytest=False):
         """Volumetric rendering.
@@ -79,6 +80,7 @@ class Renderer(torch.nn.Module):
           coarse model: self-explanatory
           fine model: self-explanatory
           retraw: bool. If True, include model's raw, unprocessed predictions.
+          retweights: bool. If True, include the points and associated weights.
           network_fine: "fine" network with same spec as network_fn.
           verbose: bool. If True, print more debugging info.
         Returns:
@@ -156,6 +158,9 @@ class Renderer(torch.nn.Module):
         ret = {'rgb_map' : rgb_map, 'disp_map' : disp_map, 'acc_map' : acc_map}
         if retraw:
             ret['raw'] = raw
+        if retweights:
+            ret['weights'] = weights
+            ret['z_vals'] = z_vals
         if self.N_importance > 0:
             ret['rgb0'] = rgb_map_0
             ret['disp0'] = disp_map_0
