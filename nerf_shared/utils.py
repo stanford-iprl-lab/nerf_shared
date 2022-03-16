@@ -147,13 +147,14 @@ def get_renderer(args, bds_dict):
         'use_viewdirs' : args.use_viewdirs,
         'white_bkgd' : args.white_bkgd,
         'raw_noise_std' : args.raw_noise_std,
+        'ndc' : True,
+        'lindisp' : args.lindisp
     }
 
     # NDC only good for LLFF-style forward facing data
     if args.dataset_type != 'llff' or args.no_ndc:
         print('Not ndc!')
         render_kwargs['ndc'] = False
-        render_kwargs['lindisp'] = args.lindisp
 
     render_kwargs.update(bds_dict)
 
@@ -170,7 +171,8 @@ def get_optimizer(coarse_model, fine_model, args):
 
     return optimizer
 
-def load_checkpoint(coarse_model, fine_model, optimizer, args, b_load_ckpnt_as_trainable=False):
+def load_checkpoint(coarse_model, fine_model, optimizer, args,
+                    b_load_ckpnt_as_trainable=False, checkpoint_index=None):
     """
     b_load_ckpnt_as_trainable - controls if we load file w/ grad set to true or false. If model
         will continue to be trained this must be True, otherwise set to False to save memory
@@ -189,7 +191,10 @@ def load_checkpoint(coarse_model, fine_model, optimizer, args, b_load_ckpnt_as_t
     print('Found ckpts', ckpts)
 
     if len(ckpts) > 0 and not args.no_reload:
-        ckpt_path = ckpts[-1]
+        if checkpoint_index is not None:
+            ckpt_path = ckpts[checkpoint_index]
+        else:
+            ckpt_path = ckpts[-1]
         print('Reloading from', ckpt_path)
         ckpt = torch.load(ckpt_path, map_location=device)
 
@@ -241,14 +246,11 @@ def load_datasets(args):
         print('NEAR FAR', near, far)
 
     elif args.dataset_type == 'blender':
-        images, poses, render_poses, hwf, i_split = load_blender.load_blender_data(
+        images, poses, render_poses, hwf, i_split, near, far = load_blender.load_blender_data(
             args.datadir, args.half_res, args.testskip)
 
         print('Loaded blender', images.shape, render_poses.shape, hwf, args.datadir)
         i_train, i_val, i_test = i_split
-
-        near = 0.
-        far = 4.
 
         if args.white_bkgd:
             images = images[...,:3]*images[...,-1:] + (1.-images[...,-1:])

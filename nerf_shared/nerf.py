@@ -138,7 +138,7 @@ class NeRF(nn.Module):
                     points: torchtyping.TensorType["dims":..., 3],
                     chunk=1024*64) -> torchtyping.TensorType["dims":...]:
 
-        view_dir = torch.ones_like(points)
+        view_dir = torch.ones_like(points[..., 0, :])
         output = self.forward(points, view_dir, chunk)
         return output[..., -1]
 

@@ -54,6 +54,7 @@ def load_blender_data(basedir, half_res=False, testskip=1):
     counts = [0]
     for s in splits:
         meta = metas[s]
+        near, far = meta['near'], meta['far']
         imgs = []
         poses = []
         if s=='train' or testskip==0:
@@ -94,6 +95,6 @@ def load_blender_data(basedir, half_res=False, testskip=1):
         # imgs = tf.image.resize_area(imgs, [400, 400]).numpy()
 
 
-    return imgs, poses, render_poses, [H, W, focal], i_split
+    return imgs, poses, render_poses, [H, W, focal], i_split, near, far
 
 
