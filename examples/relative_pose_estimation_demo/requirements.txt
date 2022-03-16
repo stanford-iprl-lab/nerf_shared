@@ -9,3 +9,5 @@ tqdm
 opencv-python
 typeguard
 torchtyping
+scipy
+git+https://github.com/princeton-vl/lietorch.git
